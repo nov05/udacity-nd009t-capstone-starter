@@ -1,4 +1,9 @@
-# Project Overview: Inventory Monitoring at Distribution Centers
+# 🟢 **Capstone Project:**  
+**Udacity AWS Machine Learning Engineer Nanodegree (ND189)**  
+
+<br><br><br>  
+
+# 👉 **Project Overview: Inventory Monitoring at Distribution Centers**  
 
 Distribution centers often use robots to move objects as a part of their operations. Objects are carried in bins which can contain multiple objects. In this project, you will have to build a model that can count the number of objects in each bin. A system like this can be used to track inventory and make sure that delivery consignments have the correct number of items.
 
