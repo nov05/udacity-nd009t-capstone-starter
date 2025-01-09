@@ -1,5 +1,68 @@
-# 🟢 **Capstone Project:**  
-**Udacity AWS Machine Learning Engineer Nanodegree (ND189)**  
+# 🟢 **Capstone Project**  
+**Udacity AWS Machine Learning Engineer Nanodegree (ND189)**   
+Amazon Bin Object Counting, a demonstration of end-to-end machine learning engineering skills on AWS  
+
+<br><br><br>  
+
+# 👉 Project Proposal 
+
+### **Domain Background**  
+
+  * In distribution centers, bins often carry multiple objects, making accurate counting important for inventory and shipments. This project focuses on building a model that can count the number of objects in a bin from a photo, helping to track inventory and ensure correct deliveries.
+
+### **Problem Statement**  
+
+  * The dataset is huge and the training might take long time.
+  * The images are blurry, in different sizes, with noises such as tapes over the bin. Objects in the bin are different products in all kinds of shapes and size, and might overlap each other. All these increase the difficulty in prediction.
+    <img src="https://raw.githubusercontent.com/silverbottlep/abid_challenge/refs/heads/master/figs/abid_images.png" width=600>  
+  * The focus of this project is on building a machine learning training pipeline in AWS, with model performance not being a concern.  
+
+### **Solution Statement**   
+
+  * Leverage AWS SageMaker features like Pipe Mode, distributed training, and hyperparameter tuning for faster training. Additionally, use Spot Instances to optimize costs.
+
+### **Datasets and Inputs**
+
+  * We will use the Amazon Bin Image Dataset, which contains 535,234 images of bins holding one or more objects. These objects include 459,476 different products in various shapes and sizes. Each image is accompanied by a metadata file that provides details like the number of objects, image dimensions, and object type. Our task is to classify the number of objects in each bin.  
+
+### **Benchmark Model**  
+
+  * Random class baseline (accuracy): 20.08%
+  * Largest class baseline (accuracy): 22.27%
+  * [ResNet34 + SGDR (accuracy): 53.8%](https://github.com/pablo-tech/Image-Inventory-Reconciliation-with-SVM-and-CNN/tree/master)  
+  * [ResNet34 + SGD (accuracy): 55.67%](https://github.com/silverbottlep/abid_challenge)  
+
+    | Accuracy (%)| RMSE (Root Mean Square Error) |
+    |-------------|-------------------------------|
+    | 55.67       | 0.930                         |
+
+    | Quantity | Per class accuracy(%) | Per class RMSE |
+    |----------|-----------------------|----------------|
+    | 0        | 97.7                  | 0.187          |
+    | 1        | 83.4                  | 0.542          |
+    | 2        | 67.2                  | 0.710          |
+    | 3        | 54.9                  | 0.867          |
+    | 4        | 42.6                  | 1.025          |
+    | 5        | 44.9                  | 1.311          |
+
+### **Evaluation Metrics**
+
+  * Accuracy: whether predicted object numbers matches the actual numbers
+  * RMSE (Root Mean Squared Error): Indicates how close the predicted object numbers are to the actual values, with larger errors being penalized more.  
+
+### **Project Design**
+
+  * Exploratory Data Analysis
+  * Limit the project to only use images of bins containing fewer than 6 objects (0~5 objects, 6 classes). 
+  * There are over 500,000 images in the dataset. After sampling the image sizes, I found that they range from 40 to 120 KB, while the JSON files range from 1 to 3 KB each. This means the total size of the image data is between 20 and 60 GB, and the JSON data is between 0.5 and 1.5 GB. Hence we choose **fast file mode**, or **pipe mode** as the training data input mode.
+    https://docs.aws.amazon.com/sagemaker/latest/dg/model-access-training-data.html
+  * To prototype the training data input process, we can use the 1,228 images listed in the `file_list.json` from the starter repository.  
+  * Use SageMaker script mode with an AWS GPU instance like `g4dn.xlarge` and enable multi-instance training.  
+  * Hyperparameters tuning
+  * Deploy endpoint  
+  * Testing the endpoint
+  * Clean up resources
+
 
 <br><br><br>  
 
@@ -66,7 +129,7 @@ An important part of your project is creating a `README` file that describes the
 
 # Standout Suggestions
 
-Standout suggestions are some recommendations to help you take your project further and turn it into a nice portfolio piece. If you have been having a good time working on this project and want some additional practice, then we recommend that you try them. However, do not that these suggestions are all optional and you can skip any (or all) of them and submit the project in the next page.
+Standout suggestions are some recommendations to help you take your project further and turn it into a nice portfolio piece. If you have been having a good time working on this project and want some additional practice, then we recommend that you try them. However, these suggestions are all optional and you can skip any (or all) of them and submit the project in the next page.
 
 Here are some of suggestions to improve your project:
 
@@ -76,3 +139,10 @@ Here are some of suggestions to improve your project:
 * **Multi-Instance Training:** Can you train the same model, but this time distribute your training workload across multiple instances?
 
 Once you have completed the standout suggestions, make sure that you explain what you did and how you did it in the `README`. This way the reviewers will look out for it and can give you helpful tips and suggestions!
+
+
+<br><br><br>  
+
+### **Logs**
+
+2025-01-09 project proposal   
