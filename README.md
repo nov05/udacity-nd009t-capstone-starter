@@ -4,6 +4,8 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 <br><br><br>  
 
+---  
+
 # 👉 Project Proposal 
 
 ### **Domain Background**  
@@ -23,14 +25,15 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Datasets and Inputs**
 
-  * We will use the Amazon Bin Image Dataset, which contains 535,234 images of bins holding one or more objects. These objects include 459,476 different products in various shapes and sizes. Each image is accompanied by a metadata file that provides details like the number of objects, image dimensions, and object type. Our task is to classify the number of objects in each bin.  
+  * We will use the `Amazon Bin Image Dataset`, which contains **535,234 images** of bins holding one or more objects. These objects include **459,476 different products** in various shapes and sizes. Each image is accompanied by a metadata file that provides details like the number of objects, image dimensions, and object type. Our task is to classify the number of objects in each bin.  
+  * For this project, we will only use images of bins containing fewer than 6 objects (**0–5 objects**, corresponding to **6 classes**).  
 
 ### **Benchmark Model**  
 
   * Random class baseline (accuracy): 20.08%
   * Largest class baseline (accuracy): 22.27%
   * [ResNet34 + SGDR (accuracy): 53.8%](https://github.com/pablo-tech/Image-Inventory-Reconciliation-with-SVM-and-CNN/tree/master)  
-  * [ResNet34 + SGD (accuracy): 55.67%](https://github.com/silverbottlep/abid_challenge)  
+  * [ResNet34 + SGD (accuracy): **55.67%**](https://github.com/silverbottlep/abid_challenge)  
 
     | Accuracy (%)| RMSE (Root Mean Square Error) |
     |-------------|-------------------------------|
@@ -47,13 +50,13 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Evaluation Metrics**
 
-  * Accuracy: whether predicted object numbers matches the actual numbers
-  * RMSE (Root Mean Squared Error): Indicates how close the predicted object numbers are to the actual values, with larger errors being penalized more.  
+  * **Accuracy**: whether predicted object numbers matches the actual numbers
+  * **RMSE (Root Mean Squared Error)**: Indicates how close the predicted object numbers are to the actual values, with larger errors being penalized more.  
 
 ### **Project Design**
 
-  * Exploratory Data Analysis
-  * Limit the project to only use images of bins containing fewer than 6 objects (0~5 objects, 6 classes). 
+  * Exploratory Data Analysis (check [the notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/EDA.ipynb))  
+  * Limit the project to only use images of bins containing fewer than 6 objects (**0~5 objects, 6 classes**). 
   * There are over 500,000 images in the dataset. After sampling the image sizes, I found that they range from 40 to 120 KB, while the JSON files range from 1 to 3 KB each. This means the total size of the image data is between 20 and 60 GB, and the JSON data is between 0.5 and 1.5 GB. Hence we choose **fast file mode**, or **pipe mode** as the training data input mode.
     https://docs.aws.amazon.com/sagemaker/latest/dg/model-access-training-data.html
   * To prototype the training data input process, we can use the 1,228 images listed in the `file_list.json` from the starter repository.  
@@ -65,6 +68,8 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 
 <br><br><br>  
+
+---  
 
 # 👉 **Project Overview: Inventory Monitoring at Distribution Centers**  
 
@@ -142,6 +147,8 @@ Once you have completed the standout suggestions, make sure that you explain wha
 
 
 <br><br><br>  
+
+---  
 
 ### **Logs**
 
