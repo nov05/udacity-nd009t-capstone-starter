@@ -15,7 +15,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 ### **Problem Statement**  
 
   * The dataset is huge and the training might take long time.
-  * The images are blurry, in different sizes, with noises such as tapes over the bin. Objects in the bin are different products in all kinds of shapes and size, and might overlap each other. All these increase the difficulty in prediction.
+  * The images are blurry, in different sizes, with noises such as tapes over the bin. Objects in the bin are different products in all kinds of shapes and size, and might overlap each other. All these increase the difficulty in prediction.  
     <img src="https://raw.githubusercontent.com/silverbottlep/abid_challenge/refs/heads/master/figs/abid_images.png" width=600>  
   * The focus of this project is on building a machine learning training pipeline in AWS, with model performance not being a concern.  
 
