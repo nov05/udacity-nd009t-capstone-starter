@@ -6,7 +6,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ---  
 
-# 👉 Project Proposal 
+# 👉 **Project Proposal** 
 
 ### **Domain Background**  
 
