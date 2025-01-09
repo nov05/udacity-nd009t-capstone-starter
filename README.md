@@ -59,6 +59,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
   * Limit the project to only use images of bins containing fewer than 6 objects (**0~5 objects, 6 classes**). 
   * There are over 500,000 images in the dataset. After sampling the image sizes, I found that they range from 40 to 120 KB, while the JSON files range from 1 to 3 KB each. This means the total size of the image data is between 20 and 60 GB, and the JSON data is between 0.5 and 1.5 GB. Hence we choose **fast file mode**, or **pipe mode** as the training data input mode.
     https://docs.aws.amazon.com/sagemaker/latest/dg/model-access-training-data.html
+    <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-01-09%2011_13_55-Setting%20up%20training%20jobs%20to%20access%20datasets%20-%20Amazon%20SageMaker%20AI.jpg" width=600>  
   * To prototype the training data input process, we can use the 1,228 images listed in the `file_list.json` from the starter repository.  
   * Use SageMaker script mode with an AWS GPU instance like `g4dn.xlarge` and enable multi-instance training.  
   * Hyperparameters tuning
