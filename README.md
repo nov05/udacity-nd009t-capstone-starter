@@ -39,9 +39,9 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
   * Random class baseline (accuracy): 20.08%
   * Largest class baseline (accuracy): 22.27%
-  * [ResNet34 + SGDR (accuracy): 53.8%](https://github.com/pablo-tech/Image-Inventory-Reconciliation-with-SVM-and-CNN/tree/master) (2018, Pablo Rodriguez Bertorello, Sravan Sripada, Nutchapol Dendumrongsup)    
-    This team also stated that they were able to improve model accuracy by 80% using a CNN compared to an SVM, achieving an overall 324% improvement over random.  
-  * [ResNet34 + SGD (accuracy): **55.67%**](https://github.com/silverbottlep/abid_challenge) (2018, Eunbyung Park)  
+  * [**ResNet34** + SGDR (accuracy): 53.8%](https://github.com/pablo-tech/Image-Inventory-Reconciliation-with-SVM-and-CNN/tree/master) (2018, Pablo Rodriguez Bertorello, Sravan Sripada, Nutchapol Dendumrongsup)    
+    This team also stated that they were able to improve model accuracy by 80% using a CNN compared to an **SVM**, achieving an overall 324% improvement over random.  
+  * [**ResNet34** + SGD (accuracy): **55.67%**](https://github.com/silverbottlep/abid_challenge) (2018, Eunbyung Park)  
 
     | Accuracy (%)| RMSE (Root Mean Square Error) |
     |-------------|-------------------------------|
