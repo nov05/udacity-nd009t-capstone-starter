@@ -10,7 +10,13 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Domain Background**  
 
-  * In distribution centers, bins often carry multiple objects, making accurate counting important for inventory and shipments. This project focuses on building a model that can **count the number of objects in a bin from a photo**, helping to track inventory and ensure correct deliveries.
+  * In distribution centers, bins often carry multiple objects, making accurate counting important for inventory and shipments. This project focuses on building a model that can **count the number of objects in a bin from a photo**, helping to track inventory and ensure correct deliveries.  
+
+  * Machine learning in image processing has evolved significantly over the past few decades. Early approaches in the 1960s and 1970s relied on basic statistical methods and hand-crafted features to analyze images. In the 1990s, **support vector machines (SVMs)** and **k-nearest neighbors (k-NN)** became popular for tasks like image classification.
+
+    The real revolution came with the rise of deep learning in the 2010s, particularly through **convolutional neural networks (CNNs)**, pioneered by Yann LeCun in the late 1990s. AlexNet's win in the ImageNet competition in 2012 demonstrated the power of deep CNNs for large-scale image recognition, leading to a boom in deep learning research. This was followed by more advanced models like **VGG**, **ResNet**, and **EfficientNet**.
+
+    Today, transfer learning and pre-trained models are commonly used to tackle image processing tasks, significantly reducing the time and resources needed for training. Emerging techniques like **GANs (Generative Adversarial Networks)** are now being used for image generation and manipulation. The field continues to advance with innovations in architectures, optimization, and real-time image processing.
 
 ### **Problem Statement**  
 
@@ -21,19 +27,21 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Solution Statement**   
 
-  * Leverage AWS SageMaker features like Pipe Mode, distributed training, and hyperparameter tuning for faster training. Additionally, use Spot Instances to optimize costs.
+  * For this project, I'll use **ResNet34** and train it from scratch, likely for only a few epochs, since accuracy isn't the goal.   
+  * Leverage AWS SageMaker features like Pipe Mode, distributed training, and hyperparameter tuning for faster training. Additionally, use Spot Instances to optimize costs if possible.
 
 ### **Datasets and Inputs**
 
   * We will use the `Amazon Bin Image Dataset`, which contains **535,234 images** of bins holding one or more objects. These objects include **459,476 different products** in various shapes and sizes. Each image is accompanied by a metadata file that provides details like the number of objects, image dimensions, and object type. Our task is to classify the number of objects in each bin.  
   * For this project, we will only use images of bins containing fewer than 6 objects (**0–5 objects**, corresponding to **6 classes**).  
 
-### **Benchmark Model**  
+### **Benchmark Models**  
 
   * Random class baseline (accuracy): 20.08%
   * Largest class baseline (accuracy): 22.27%
-  * [ResNet34 + SGDR (accuracy): 53.8%](https://github.com/pablo-tech/Image-Inventory-Reconciliation-with-SVM-and-CNN/tree/master) (2018)  
-  * [ResNet34 + SGD (accuracy): **55.67%**](https://github.com/silverbottlep/abid_challenge) (2018)  
+  * [ResNet34 + SGDR (accuracy): 53.8%](https://github.com/pablo-tech/Image-Inventory-Reconciliation-with-SVM-and-CNN/tree/master) (2018, Pablo Rodriguez Bertorello, Sravan Sripada, Nutchapol Dendumrongsup)    
+    This team also stated that they were able to improve model accuracy by 80% using a CNN compared to an SVM, achieving an overall 324% improvement over random.  
+  * [ResNet34 + SGD (accuracy): **55.67%**](https://github.com/silverbottlep/abid_challenge) (2018, Eunbyung Park)  
 
     | Accuracy (%)| RMSE (Root Mean Square Error) |
     |-------------|-------------------------------|
@@ -52,6 +60,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
   * **Accuracy**: whether predicted object numbers matches the actual numbers
   * **RMSE (Root Mean Squared Error)**: Indicates how close the predicted object numbers are to the actual values, with larger errors being penalized more.  
+  * If the model begins training and shows **steady improvements in accuracy** with each epoch, we can confirm that the training pipeline is functioning properly, which meets the project's goal. There's no need to train until the highest accuracy is achieved, as accuracy isn't the concern for this project.  
 
 ### **Project Design**
 
