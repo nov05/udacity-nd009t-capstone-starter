@@ -32,8 +32,8 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Datasets and Inputs**
 
-  * We will use the `Amazon Bin Image Dataset`, which contains **535,234 images** of bins holding one or more objects. These objects include **459,476 different products** in various shapes and sizes. Each image is accompanied by a metadata file that provides details like the number of objects, image dimensions, and object type. Our task is to classify the number of objects in each bin.  
-  * For this project, we will only use images of bins containing fewer than 6 objects (**0–5 objects**, corresponding to **6 classes**).  
+  * I will use the `Amazon Bin Image Dataset`, which contains **535,234 images** of bins holding one or more objects. These objects include **459,476 different products** in various shapes and sizes. Each image is accompanied by a metadata file that provides details like the number of objects, image dimensions, and object type. Our task is to classify the number of objects in each bin.  
+  * For this project, I will only use images of bins containing fewer than 6 objects (**0–5 objects**, corresponding to **6 classes**).  
 
 ### **Benchmark Models**  
 
