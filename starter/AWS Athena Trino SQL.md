@@ -47,6 +47,54 @@ STORED AS
 LOCATION 's3://dataset-aft-vbi-pds/metadata';
 ```
 
+* e.g. the JSON structure is as follows. Use `Amazon Ion Hive SerDe` since the JSON is in a "pretty print" format.   
+
+```JSON
+{
+    "BIN_FCSKU_DATA": {
+        "B003E72M1G": {
+            "asin": "B003E72M1G",
+            "height": {
+                "unit": "IN",
+                "value": 1.199999998776
+            },
+            "length": {
+                "unit": "IN",
+                "value": 5.099999994798
+            },
+            "name": "Buxton Heiress Double Cardex Wallet, Mahogany, One Size",
+            "normalizedName": "Buxton Heiress Double Cardex Wallet, Mahogany, One Size",
+            "quantity": 3,
+            "weight": {
+                "unit": "pounds",
+                "value": 0.4
+            },
+            "width": {
+                "unit": "IN",
+                "value": 4.399999995512001
+            }
+        },
+        ...
+    },
+    "EXPECTED_QUANTITY": 3
+}
+```
+
+### 👉 **Query table** 
+
+```SQL
+SELECT COUNT(*) FROM "database-aft-vbi-pds"."table_metadata_flat";
+SELECT * FROM "database-aft-vbi-pds"."table_metadata_flat" limit 2;
+```
+
+* e.g. query the flattened table result
+
+| #  | asin        | name                                                                            | normalized_name                                                                | quantity | height_value | height_unit | length_value | length_unit | width_value | width_unit | weight_value | weight_unit |
+|----|-------------|---------------------------------------------------------------------------------|---------------------------------------------------------------------------------|----------|--------------|-------------|--------------|-------------|-------------|------------|--------------|-------------|
+| 1  | B00KTFGIKM  | Lifefactory 4-Cup Glass Food Storage with Silicone Sleeve, Huckleberry           | Lifefactory 4-Cup Glass Food Storage with Silicone Sleeve, Huckleberry           | 1        | 3.49999999643 | IN          | 7.39999999245 | IN          | 6.59999999327 | IN         | 1.89999999999 | pounds     |
+| 2  | B0000AY9W6  | Camco 44412 Wheel Chock - Single                                                | Camco 44412 Wheel Chock - Single                                                | 1        | 4.5669291292  | IN          | 7.9527558974  | IN          | 4.8818897588  | IN         | 0.44092002372 | pounds     |
+
+
 ### 👉 **Created nested table with MAP function**
 
 ```SQL
@@ -70,12 +118,20 @@ STORED AS
 LOCATION 's3://dataset-aft-vbi-pds/metadata';
 ```
 
-### 👉 **Select from table**
+### 👉 **Query table**
 
 ```SQL
 SELECT COUNT(*) FROM "database-aft-vbi-pds"."table_metadata";
-SELECT * FROM "database-aft-vbi-pds"."table_metadata" limit 10;
+SELECT * FROM "database-aft-vbi-pds"."table_metadata" limit 2;
 ```
+
+* e.g. Query the nested table result  
+
+| #  | bin_fcsku_data                                                                                                                                                                                                                                     | expected_quantity |
+|----|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
+| 1  | {B01DBHZLSO={asin=B01DBHZLSO, name=Madhu's COLLECTION MG786169C Photo Frame, 4" by 6", Multicolor, normalizedname=Madhu's COLLECTION MG786169C Photo Frame, 4" by 6", Multicolor, quantity=4, height={unit=IN, value=1.500000000000000000}, length={unit=IN, value=8.000000000000000000}, width={unit=IN, value=7.000000000000000000}, weight={unit=pounds, value=3.000000000000000000}}, 0553373056={asin=0553373056, name=Creating Love: The Next Great Stage of Growth, normalizedname=Creating Love: The Next Great Stage of Growth, quantity=1, height={unit=IN, value=1.259842518400000000}, length={unit=IN, value=8.976377943600000000}, width={unit=IN, value=5.511811018000000000}, weight={unit=pounds, value=0.970000000000000000}}} | 5                 |
+| 2  | {B000CCW2V6={asin=B000CCW2V6, name=Da Vinci and the Code He Lived By (History Channel), normalizedname=Da Vinci and the Code He Lived By (History Channel), quantity=1, height={unit=IN, value=0.582677164760000000}, length={unit=IN, value=7.098425189610000000}, width={unit=IN, value=5.417322829120000000}, weight={unit=pounds, value=0.183336417079200000}}, B01AL1UO3U={asin=B01AL1UO3U, name=Galaxy S7 Edge Case, Terrapin [GENUINE LEATHER] Samsung S7 Edge Case Executive [Black] Premium Wallet Case with Card Slots & Bill Compartment Case for Samsung Galaxy S7 Edge - Black, normalizedname=Galaxy S7 Edge Case, Terrapin [GENUINE LEATHER] Samsung S7 Edge Case Executive [Black] Premium Wallet Case with Card Slots & Bill Compartment Case for Samsung Galaxy S7 Edge - Black, quantity=1, height={unit=IN, value=1.499999998470000000}, length={unit=IN, value=5.999999993880000000}, width={unit=IN, value=3.999999995920000000}, weight={unit=pounds, value=0.449999999622634200}}} | 2                 |
+
 
 ### 👉 **Query table to retrieve data for a specific item**  
 
@@ -99,6 +155,13 @@ SELECT
 FROM "database-aft-vbi-pds"."table_metadata", key
 WHERE element_at(bin_fcsku_data, key.asin).asin IS NOT NULL;
 ```   
+
+* Query result
+
+| #  | asin        | product_name                                            | normalized_name                                           | quantity | height_value | height_unit | length_value | length_unit | width_value | width_unit | weight_value         | weight_unit |
+|----|-------------|---------------------------------------------------------|-----------------------------------------------------------|----------|--------------|-------------|--------------|-------------|-------------|------------|----------------------|-------------|
+| 1  | B00CLCIQDI  | Renew Life Daily Liver Support, 60 Veggie Capsules     | Renew Life Daily Liver Support, 60 Veggie Capsules        | 1        | 2.299999997654 | IN          | 4.799999995104 | IN          | 2.49999999745  | IN         | 0.022046001186074866 | pounds      |
+
 
 ### 👉 **Consolidate JSON files with AWS Athena CTAS**  
 
