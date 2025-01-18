@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS table_metadata_flat;
 DROP TABLE IF EXISTS table_metadata_consolidated;
 ```
 
-### 👉 **Created flattened table**  
+### 👉 **Create flattened table**  
 
 * Some records are missing in this case, for one JSON file might contain multiple records.  
 
@@ -78,7 +78,7 @@ LOCATION 's3://dataset-aft-vbi-pds/metadata';
         },
         ...
     },
-    "EXPECTED_QUANTITY": 3
+    "EXPECTED_QUANTITY": 5
 }
 ```
 
@@ -97,7 +97,7 @@ SELECT * FROM "database-aft-vbi-pds"."table_metadata_flat" limit 2;
 | 2  | B0000AY9W6  | Camco 44412 Wheel Chock - Single                                                | Camco 44412 Wheel Chock - Single                                                | 1        | 4.5669291292  | IN          | 7.9527558974  | IN          | 4.8818897588  | IN         | 0.44092002372 | pounds     |
 
 
-### 👉 **Created nested table with MAP function**
+### 👉 **Create nested table with MAP function**
 
 ```SQL
 CREATE EXTERNAL TABLE table_metadata (
