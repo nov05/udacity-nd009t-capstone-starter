@@ -10,8 +10,9 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Metadata Exploratory Data Analysis (EDA)**
 
-* [Query and consolidate a large number of small JSON files with AWS Athena](https://www.youtube.com/watch?v=DMazwtXpF8I)
-* [How to run local Glue Spark jobs with Docker and VS Code](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
+* Tutorial: [Query and consolidate a large number of small JSON files with AWS Athena](https://www.youtube.com/watch?v=DMazwtXpF8I)
+* Tutorial: [How to run local Glue Spark jobs with Docker and VS Code](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
+  Check [the PySpark notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb)  
 
 <br><br><br>
 
