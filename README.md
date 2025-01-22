@@ -6,6 +6,17 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ---  
 
+# 👉 **Project Submission**
+
+### **Metadata Exploratory Data Analysis (EDA)**
+
+* [Query and consolidate a large number of small JSON files with AWS Athena](https://www.youtube.com/watch?v=DMazwtXpF8I)
+* [How to run local Glue Spark jobs with Docker and VS Code](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
+
+<br><br><br>
+
+---  
+
 # 👉 **Project Proposal** 
 
 ### **Domain Background**  
@@ -162,4 +173,6 @@ Once you have completed the standout suggestions, make sure that you explain wha
 
 ### **Logs**
 
-2025-01-09 project proposal   
+2025-01-21 tutorial: How to run local Glue Spark jobs with Docker and VS Code   
+2025-01-17 tutorial: Query and consolidate a large number of small JSON files with AWS Athena  
+2025-01-09 project proposal    
