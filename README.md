@@ -10,9 +10,13 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### **Metadata Exploratory Data Analysis (EDA)**
 
-* Tutorial: [Query and consolidate a large number of small JSON files with AWS Athena](https://www.youtube.com/watch?v=DMazwtXpF8I)
-* Tutorial: [How to run local Glue Spark jobs with Docker and VS Code](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
-  Check [the PySpark notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb)  
+* Check [the PySpark EDA notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb) on a subset of the metadata (10K out of 500K JSON files from the original dataset)
+  * Demo video: [Query and consolidate a large number of small JSON files with AWS Athena](https://www.youtube.com/watch?v=DMazwtXpF8I)
+  * Demo video: [Develop local AWS Glue Spark jobs with Docker and VS Code](https://www.youtube.com/watch?v=Kqw_1q9O2NQ)
+  [Text format tutorial](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
+
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/metadata_01_expected%20quantity.png" width=300> <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/metadata_02_item%20quantity.png" width=300> <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/metadata_03_hlw_weight.png" width=365>   
+ 
 
 <br><br><br>
 
