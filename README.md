@@ -8,7 +8,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 # 👉 **Project Submission**
 
-### **Metadata Exploratory Data Analysis (EDA)**
+### 🏷️ **Metadata Exploratory Data Analysis (EDA)**
 
 * Check [the PySpark EDA notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb) on a subset of the metadata (10K out of 500K JSON files from the original dataset)
   * Demo video: [Query and consolidate a large number of small JSON files with AWS Athena <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/icons/youtube_red_2000x2000.png" width=20>](https://www.youtube.com/watch?v=DMazwtXpF8I)
