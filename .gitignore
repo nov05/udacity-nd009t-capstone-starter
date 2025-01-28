@@ -173,3 +173,4 @@ cython_debug/
 
 ## added by nov05
 data/
+secrets/

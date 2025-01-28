@@ -19,6 +19,14 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
  
 * From the target (expected quantity) distribution plot, we can see that there is class imbalance. Additionally, the item quantity distribution plot shows that most items only have one or two images.  
 
+### 🏷️ **Notes**
+
+* [SageMaker input mode](https://docs.google.com/document/d/1SNQuYrCOy6s5Zg3NXdkrujOyDPP1VA4b8HKAqEoJvM4)   
+* [SageMaker PyTorch distributed training](https://docs.google.com/document/d/12yN589I95IdyJjOwoxH5uQf08bfCvnXvIYRYChFw8R8)       
+* [Different Levels of AWS Resources for Machine Learning Model Training and Deployment](https://gist.github.com/nov05/6f39c83c143d91175075fb8e7e871d0c)    
+
+[All other notes for the nanodegree](https://drive.google.com/drive/folders/1-BRvqMlMbk1E6kV6BALTLhXRyqJMWPNE)  
+
 <br><br><br>
 
 ---  
@@ -85,7 +93,10 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
   * Limit the project to only use images of bins containing fewer than 6 objects (**0~5 objects, 6 classes**). 
   * There are over 500,000 images in the dataset. After sampling the image sizes, I found that they range from 40 to 120 KB, while the JSON files range from 1 to 3 KB each. This means the total size of the image data is between 20 and 60 GB, and the JSON data is between 0.5 and 1.5 GB. Hence we choose **fast file mode**, or **pipe mode** as the training data input mode.  
     https://docs.aws.amazon.com/sagemaker/latest/dg/model-access-training-data.html
-    <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-01-09%2011_13_55-Setting%20up%20training%20jobs%20to%20access%20datasets%20-%20Amazon%20SageMaker%20AI.jpg" width=600>  
+    <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-01-09%2011_13_55-Setting%20up%20training%20jobs%20to%20access%20datasets%20-%20Amazon%20SageMaker%20AI.jpg" width=600>   
+  * The original dataset actually fits **Scenario C**: your dataset is too large for File mode, or has many small files (which you can’t serialize easily), or you have a random read access pattern. Hence, **FSx for Lustre** would be a great choice. However, the estimated throughput cost would be around $300 for 60GB of data, so I’ve decided not to use it as input mode.    
+    https://aws.amazon.com/blogs/machine-learning/choose-the-best-data-source-for-your-amazon-sagemaker-training-job/      
+    <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/ML-2979-image005.jpg" width=400>  
   * To prototype the training data input process, we can use the 10,441 images listed in the `file_list.json` from the starter repository.  
   * Use SageMaker script mode with an AWS GPU instance like `g4dn.xlarge` and enable multi-instance training.  
   * Hyperparameters tuning
