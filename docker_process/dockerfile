@@ -1,0 +1,10 @@
+FROM python:3.8-slim
+
+# Install necessary packages
+RUN pip install boto3 s3fs webdataset
+
+## Copy your script into the container (optional, if you want to bundle the script in)
+# COPY webdataset.py /opt/ml/code/webdataset.py
+
+# Set the entry point
+ENTRYPOINT ["python3", "/opt/ml/code/webdataset.py"]

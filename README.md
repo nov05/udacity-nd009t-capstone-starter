@@ -24,6 +24,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 * [SageMaker input mode](https://docs.google.com/document/d/1SNQuYrCOy6s5Zg3NXdkrujOyDPP1VA4b8HKAqEoJvM4)   
 * [SageMaker PyTorch distributed training](https://docs.google.com/document/d/12yN589I95IdyJjOwoxH5uQf08bfCvnXvIYRYChFw8R8)       
 * [Different Levels of AWS Resources for Machine Learning Model Training and Deployment](https://gist.github.com/nov05/6f39c83c143d91175075fb8e7e871d0c)    
+* [Tutorial:](https://docs.google.com/document/d/17KzWVf84xQJVNH1jd6yh_FLgr781QcdKng1JIF6P5X4) Create custom docker image for SageMaker data processing jobs, create AWS ECR private repo, and upload the image to the repo   
 
 [All other notes for the nanodegree](https://drive.google.com/drive/folders/1-BRvqMlMbk1E6kV6BALTLhXRyqJMWPNE)  
 

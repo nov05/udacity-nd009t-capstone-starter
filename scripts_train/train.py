@@ -108,7 +108,7 @@ def train(task):
             wandb.log({"train_loss": loss.item()}, step=task.step_counter.total_steps)
         loss.backward()
         task.optimizer.step()
-        if batch_idx%100 == 0:
+        if batch_idx%100 == 0:  ## Print every 100 batches
             print(
                 "Train Epoch: {} [{}/{} ({:.0f}%)], Loss: {:.6f}".format(
                     task.current_epoch,
@@ -159,7 +159,10 @@ def test(task, phase='eval'):
         )
     )
     if phase=='eval' and task.config.wandb:
-        wandb.log({f"{phase}_accuracy_epoch": accuracy}, step=task.step_counter.total_steps)
+        wandb.log(
+            {f"{phase}_accuracy_epoch": accuracy}, 
+            step=task.step_counter.total_steps
+        )
 
 
 
@@ -171,13 +174,18 @@ def create_net(task):
     task.model = getattr(torchvision.models, task.config.model_arch)(
         # weights='IMAGENET1K_V1',  ## Load pretrained weights
     ) 
-    task.model.fc = nn.Linear(task.model.fc.in_features, task.config.num_classes)  # Adjust for the number of classes
+    task.model.fc = nn.Linear(
+        task.model.fc.in_features, 
+        task.config.num_classes)  # Adjust for the number of classes
     torch.nn.init.kaiming_normal_(task.model.fc.weight)  # Initialize new layers
     task.model.to(task.config.device)
 
 
 
 def save(task):
+    '''
+    Save the model to the model_dir
+    '''
     task.model.eval()
     path = os.path.join(task.config.model_dir, 'model.pth')
     ## save model weights only
@@ -202,6 +210,9 @@ def save(task):
 
 
 def main(task):
+    '''
+
+    '''
     task.step_counter = StepCounter()
     task.early_stopping = EarlyStopping(task.config.early_stopping_patience)
     task.config.device = (
@@ -209,6 +220,8 @@ def main(task):
         if task.config.use_cuda else "cpu"
     )
     print(f"👉 Device: {task.config.device}")
+    task.config.num_classes = len(train_dataset.classes)
+    task.config.num_cpu = os.cpu_count()
 
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -231,9 +244,24 @@ def main(task):
     train_dataset = datasets.ImageFolder(task.config.train, transform=train_transform)
     val_dataset = datasets.ImageFolder(task.config.validation, transform=val_transform)
     test_dataset = datasets.ImageFolder(task.config.test, transform=val_transform)
-    task.train_loader = DataLoader(train_dataset, batch_size=task.config.batch_size, shuffle=True)
-    task.val_loader = DataLoader(val_dataset, batch_size=task.config.batch_size, shuffle=False)
-    task.test_loader = DataLoader(test_dataset, batch_size=task.config.batch_size, shuffle=False)
+    task.train_loader = DataLoader(
+        train_dataset, 
+        batch_size=task.config.batch_size, 
+        shuffle=True,
+        num_workers=task.config.num_cpu,
+        pin_memory=True)
+    task.val_loader = DataLoader(
+        val_dataset, 
+        batch_size=task.config.batch_size, 
+        shuffle=False,
+        num_workers=task.config.num_cpu,
+        pin_memory=True)
+    task.test_loader = DataLoader(
+        test_dataset, 
+        batch_size=task.config.batch_size, 
+        shuffle=False,
+        num_workers=task.config.num_cpu,
+        pin_memory=True)
     ## handle class imbalance
     class_weights = compute_class_weight(
         class_weight='balanced', 
@@ -242,8 +270,8 @@ def main(task):
     class_weights = torch.tensor(class_weights, dtype=torch.float32).to(task.config.device)
 
     ## TODO: Initialize a model by calling the net function
-    task.config.num_classes = len(train_dataset.classes)
     create_net(task)
+
     # ======================================================#
     # 4. Register the SMDebug hook to save output tensors.  #
     # ======================================================#
@@ -282,9 +310,11 @@ def main(task):
             break
         task.scheduler.step()  ## Update learning rate after every epoch
         print(f"👉 Train Epoch: {epoch+1}, Learning rate: {task.optimizer.param_groups[0]['lr']}")
+
     ## TODO: Test the model to see its accuracy
     print("🟢 Start testing...")
     test(task, phase='test')
+
     ## TODO: Save the trained model
     save(task)
 
