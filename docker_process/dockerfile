@@ -1,35 +1,11 @@
-FROM python:3.
+FROM python:3.10-slim-buster
 
-# Install dependencies for downloading and extracting Miniconda
-RUN apt-get update && apt-get install -y \
-    wget \
-    bzip2 \
-    && rm -rf /var/lib/apt/lists/*
+# Install dependencies, like curl, if required for further setup
+RUN apt-get update && apt-get install -y curl
 
-# Create a directory for Miniconda installation
-RUN mkdir -p /opt/conda
-# Download and install Miniconda
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /opt/conda/miniconda.sh && \
-    bash /opt/conda/miniconda.sh -b -u -p /opt/conda && \
-    rm /opt/conda/miniconda.sh
-# Add Miniconda to the PATH
-ENV PATH="/opt/conda/bin:$PATH" 
+# Install pip dependencies
+RUN pip install --no-cache-dir -U pip setuptools wheel
 
-# Update Conda to the latest version and install webdataset etc.
-RUN conda update -y conda && \
-    conda config --add channels conda-forge && \
-    conda install -y webdataset==0.2.100 && \
-    conda clean -a -y
-RUN pip install boto3==1.35.66
-
-## Set working directory
-# WORKDIR /opt/ml/code
-
-## Copy source files
-# COPY . .
-
-## Copy your script into the container (optional, if you want to bundle the script in)
-# COPY webdataset.py /opt/ml/code/process.py
-
-## Set the entry point
-# ENTRYPOINT ["python3", "/opt/ml/code/process.py"]
+# Uninstall and install specific version of webdataset
+RUN pip install webdataset==0.2.100 && \
+    pip install boto3==1.35.66

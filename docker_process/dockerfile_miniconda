@@ -1,0 +1,35 @@
+FROM python:3.8-slim
+
+# Install dependencies for downloading and extracting Miniconda
+RUN apt-get update && apt-get install -y \
+    wget \
+    bzip2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a directory for Miniconda installation
+RUN mkdir -p /opt/conda
+# Download and install Miniconda
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /opt/conda/miniconda.sh && \
+    bash /opt/conda/miniconda.sh -b -u -p /opt/conda && \
+    rm /opt/conda/miniconda.sh && \
+    /opt/conda/bin/conda clean -a -y
+ENV PATH="/opt/conda/bin:$PATH" 
+
+# Update Conda to the latest version and install webdataset etc.
+RUN conda update -y conda && \
+    conda config --add channels conda-forge && \
+    conda install -y webdataset==0.2.100 && \
+    conda clean -a -y
+RUN pip install boto3==1.35.66
+
+## Set working directory
+# WORKDIR /opt/ml/processing/input/code
+
+## Copy source files
+# COPY . .
+
+## Copy your script into the container (optional, if you want to bundle the script in)
+# COPY webdataset.py /opt/ml/processing/input/code/webdataset.py
+
+## Set the entry point
+# ENTRYPOINT ["python3", "/opt/ml/processing/input/code/webdataset.py"]

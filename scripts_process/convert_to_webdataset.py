@@ -1,37 +1,10 @@
-# This script demonstrates how to convert image and metadata pairs stored in S3 into WebDataset format
+## /opt/ml/processing/input/code/webdataset.py
+## This script demonstrates how to convert image and metadata pairs stored in S3 into WebDataset format
 import os
 import io
 import boto3
 import argparse
 import webdataset as wds
-
-import importlib.util
-module_name = 'webdataset'
-if importlib.util.find_spec(module_name) is not None:
-    print(f"🟢 {module_name} is installed!")
-else:
-    print(f"⚠️ {module_name} is not installed.")
-import pkg_resources
-print("👉 webdataset version:", 
-    pkg_resources.get_distribution("webdataset").version)
-
-
-
-# Set up S3
-s3_client = boto3.client('s3')
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--SM_INPUT_BUCKET', type=str)
-parser.add_argument('--SM_INPUT_PREFIX_IMAGES', type=str)
-parser.add_argument('--SM_INPUT_PREFIX_METADATA', type=str)
-parser.add_argument('--SM_OUTPUT_BUCKET', type=str)
-parser.add_argument('--SM_OUTPUT_PREFIX', type=str)
-args = parser.parse_args()
-input_bucket = args.SM_INPUT_BUCKET
-input_prefix_images = args.SM_INPUT_PREFIX_IMAGES
-input_prefix_metadata = args.SM_INPUT_PREFIX_METADATA
-output_bucket = args.SM_OUTPUT_BUCKET
-output_prefix = args.SM_OUTPUT_PREFIX
 
 
 def get_s3_object_keys(bucket_name, prefix):
@@ -47,7 +20,7 @@ def iterate_in_chunks(input_list, chunk_size=10):
         yield input_list[i:i+chunk_size]
 
 
-def convert_to_webdataset(image_keys, num_tar_files):
+def convert_dataset(image_keys, num_tar_files):
     # Create a tar file in memory and write WebDataset format
     tar_stream = io.BytesIO()
     with wds.TarWriter(tar_stream) as sink:
@@ -76,18 +49,37 @@ def convert_to_webdataset(image_keys, num_tar_files):
 
 
 def main():
-    max_tar_files = 2  ## Maximum number of tar files to create
-    num_keys_per_tar = 10  ## Number of keys to process per tar file
-
+    MAX_TAR_FILES = 2  ## Maximum number of tar files to create
+    KEYS_PER_TAR = 10  ## Number of keys to process per tar file
     image_keys = get_s3_object_keys(input_bucket, input_prefix_images)
-
-    num_tar_files = 0
-    for image_keys_chunk in iterate_in_chunks(image_keys, num_keys_per_tar):
-        convert_to_webdataset(image_keys_chunk, num_tar_files)
+    num_tar_files = 0 
+    for image_keys in iterate_in_chunks(image_keys, KEYS_PER_TAR):
+        print("👉 image_keys_chunk:", image_keys)
+        convert_dataset(image_keys, num_tar_files)
         num_tar_files += 1
-        if num_tar_files >= max_tar_files:
+        if num_tar_files >= MAX_TAR_FILES:
             break
     
 
 if __name__ == "__main__":
+
+    ## Verify WebDataset import
+    print("👉 WebDataset dir:", dir(wds))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--SM_INPUT_BUCKET', type=str)
+    parser.add_argument('--SM_INPUT_PREFIX_IMAGES', type=str)
+    parser.add_argument('--SM_INPUT_PREFIX_METADATA', type=str)
+    parser.add_argument('--SM_OUTPUT_BUCKET', type=str)
+    parser.add_argument('--SM_OUTPUT_PREFIX', type=str)
+    args = parser.parse_args()
+    input_bucket = args.SM_INPUT_BUCKET
+    input_prefix_images = args.SM_INPUT_PREFIX_IMAGES
+    input_prefix_metadata = args.SM_INPUT_PREFIX_METADATA
+    output_bucket = args.SM_OUTPUT_BUCKET
+    output_prefix = args.SM_OUTPUT_PREFIX
+
+    # Set up S3
+    s3_client = boto3.client('s3')
+
     main()
