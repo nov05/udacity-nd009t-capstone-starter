@@ -20,23 +20,27 @@ def iterate_in_chunks(input_list, chunk_size=10):
         yield input_list[i:i+chunk_size]
 
 
+def read_s3_file(bucket, key):
+    # Read the file from S3
+    response = s3_client.get_object(Bucket=bucket, Key=key)
+    return response['Body'].read()
+
+
 def convert_dataset(image_keys, num_tar_files):
     # Create a tar file in memory and write WebDataset format
     tar_stream = io.BytesIO()
     with wds.TarWriter(tar_stream) as sink:
-        for image_key in enumerate(image_keys):
+        for image_key in image_keys:
             if not (image_key.endswith('.jpg') or image_key.endswith('.jpeg')):
                 print(f"⚠️ Skipping non-image file: {image_key}")
                 continue
-            base_name = os.path.splitext(image_key)[0]
+            base_name = os.path.splitext(image_key.split('/')[-1])[0]
             try:  # Ensure the corresponding JSON file exists
-                with open(f's://{input_bucket}/{input_prefix_metadata}{base_name}.json', "rb") as f:
-                    metadata_data = f.read()
+                metadata_data = read_s3_file(input_bucket, f'{input_prefix_metadata}{base_name}.json')
+                image_data = read_s3_file(input_bucket, image_key)
             except Exception as e:
                 print(f"⚠️ Skipping image '{image_key}' due to error: {e}")
                 continue
-            with open(f's://{input_bucket}/{image_key}', "rb") as f:
-                image_data = f.read()
             # Save as WebDataset sample
             sink.write({
                 "__key__": f"{base_name}",
@@ -45,7 +49,9 @@ def convert_dataset(image_keys, num_tar_files):
             })
     # Once the tar file is in memory, upload it back to S3
     tar_stream.seek(0)
-    s3_client.upload_fileobj(tar_stream, output_bucket, f'{output_prefix}data_{num_tar_files}.tar')
+    file_name = f'{output_prefix}data_{num_tar_files}.tar'
+    s3_client.upload_fileobj(tar_stream, output_bucket, file_name)
+    print(f"🟢 Successfully uploaded tar file to s3://{output_bucket}/{file_name}")
 
 
 def main():
@@ -54,7 +60,7 @@ def main():
     image_keys = get_s3_object_keys(input_bucket, input_prefix_images)
     num_tar_files = 0 
     for image_keys in iterate_in_chunks(image_keys, KEYS_PER_TAR):
-        print("👉 image_keys_chunk:", image_keys)
+        print("image_keys:", image_keys)
         convert_dataset(image_keys, num_tar_files)
         num_tar_files += 1
         if num_tar_files >= MAX_TAR_FILES:
@@ -63,8 +69,6 @@ def main():
 
 if __name__ == "__main__":
 
-    ## Verify WebDataset import
-    print("👉 WebDataset dir:", dir(wds))
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--SM_INPUT_BUCKET', type=str)
@@ -79,7 +83,6 @@ if __name__ == "__main__":
     output_bucket = args.SM_OUTPUT_BUCKET
     output_prefix = args.SM_OUTPUT_PREFIX
 
-    # Set up S3
     s3_client = boto3.client('s3')
 
     main()
