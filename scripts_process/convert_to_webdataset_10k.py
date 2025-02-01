@@ -1,13 +1,25 @@
 ## /opt/ml/processing/input/code/webdataset.py
-## This script demonstrates how to convert image and metadata pairs stored in S3 into WebDataset format
+## This script shuffle then splits dataset to train, val, and test, 
+## and converts image and metadata pairs stored in S3 into WebDataset format
 import os
-import io
 import boto3
 import argparse
 import webdataset as wds
 import random
 import json
+import glob
 
+
+
+def split_dataset(file_list, ratio=[0.7, 0.15, 0.15]):
+    # Split dataset into train, validation, and test sets (70%, 15%, 15%)
+    l = len(file_list)
+    train_size = int(l*ratio[0])
+    val_size = int(l*ratio[1])
+    test_size = l - train_size - val_size
+    return file_list[:train_size], \
+           file_list[train_size:train_size+val_size], \
+           file_list[-test_size:]
 
 
 def get_file_list(s3_uri):
@@ -19,21 +31,9 @@ def get_file_list(s3_uri):
         for file_name in file_name_list:
             file_list.append((file_name.split("/")[-1].split(".")[0], label))  # (image_id, label)
     random.shuffle(file_list)
+    print(f"🟢 File list successfully loaded from {s3_uri}\n"
+          f"    Total number of image files: {len(file_list)}")
     return file_list  
-
-
-## not in use
-def get_s3_object_keys(bucket_name, prefix):
-    response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-    if 'Contents' not in response:
-        print(f"⚠️ No objects found with prefix '{prefix}' in bucket '{bucket_name}'.")
-        return []
-    return  [obj['Key'] for obj in response['Contents']]
-    
-
-def iterate_in_chunks(input_list, chunk_size=10):
-    for i in range(0, len(input_list), chunk_size):
-        yield input_list[i:i+chunk_size]
 
 
 def read_s3_file(bucket, key):
@@ -42,47 +42,48 @@ def read_s3_file(bucket, key):
     return response['Body'].read()
 
 
-def convert_dataset(image_keys, num_tar_files):
-    # Create a tar file in memory and write WebDataset format
-    tar_stream = io.BytesIO()
-    with wds.TarWriter(tar_stream) as sink:
-        for image_key in image_keys:
-            if not (image_key.endswith('.jpg') or image_key.endswith('.jpeg')):
-                print(f"⚠️ Skipping non-image file: {image_key}")
-                continue
-            base_name = os.path.splitext(image_key.split('/')[-1])[0]
+def convert_dataset(type_prefix,  ## e.g. "train/"
+                    file_list, 
+                    maxcount=1000):  ## number of items per shard
+    shard_prefix = type_prefix[:-1] + "-shard-"  ## e.g. file name: "train-shard-000000.tar"
+    with wds.ShardWriter(f"{shard_prefix}%06d.tar", maxcount=maxcount) as sink:
+        for image_id,label in file_list:
+            image_key = f'{input_prefix_images}{image_id}.jpg'
             try:  # Ensure the corresponding JSON file exists
-                metadata_data = read_s3_file(input_bucket, f'{input_prefix_metadata}{base_name}.json')
                 image_data = read_s3_file(input_bucket, image_key)
             except Exception as e:
                 print(f"⚠️ Skipping image '{image_key}' due to error: {e}")
                 continue
             # Save as WebDataset sample
             sink.write({
-                "__key__": f"{base_name}",
+                "__key__": f"{image_id}",
                 "image": image_data,
-                "metadata": metadata_data
+                "label": label,
             })
-    # Once the tar file is in memory, upload it back to S3
-    tar_stream.seek(0)
-    file_name = f'{output_prefix}data_{num_tar_files}.tar'
-    s3_client.upload_fileobj(tar_stream, output_bucket, file_name)
-    print(f"🟢 Successfully uploaded tar file to s3://{output_bucket}/{file_name}")
+    # Upload the shard files to S3, then delete them from the processor instance locally
+    shard_list = glob.glob(f"{shard_prefix}*.tar")
+    for shard_file in shard_list:
+        base_name = os.path.basename(shard_file)
+        s3_key = os.path.join(output_prefix, type_prefix, base_name)
+        s3_client.upload_file(shard_file, output_bucket, s3_key)
+        if os.path.exists(shard_file):
+            os.remove(shard_file)
+    print(f"🟢 Successfully uploaded shard files to "
+          f"s3://{output_bucket}/{output_prefix}{type_prefix}:\n"
+          f"    {shard_list}")
 
 
 def main():
-    FILE_LIST_KEY = "s3://p5-amazon-bin-images/file_list.json"
-    MAX_TAR_FILES = 2  ## Maximum number of tar files to create
-    KEYS_PER_TAR = 10  ## Number of keys to process per tar file
-    file_list = get_file_list(FILE_LIST_KEY)
-    num_tar_files = 0 
-    for image_keys in iterate_in_chunks(image_keys, KEYS_PER_TAR):
-        print("image_keys:", image_keys)
-        convert_dataset(image_keys, num_tar_files)
-        num_tar_files += 1
-        if num_tar_files >= MAX_TAR_FILES:
-            break
-    
+    FILE_LIST_URI = "s3://p5-amazon-bin-images/file_list.json"  ## total number: 10441
+    KEYS_PER_TAR = 1000  ## Number of keys to process per tar file
+    file_list = get_file_list(FILE_LIST_URI) 
+    for type_prefix, file_list in zip(['train/', 'val/', 'test/'], 
+                                      split_dataset(file_list)):
+        convert_dataset(type_prefix, 
+                        file_list, 
+                        maxcount=KEYS_PER_TAR)
+
+
 
 if __name__ == "__main__":
 
@@ -95,11 +96,13 @@ if __name__ == "__main__":
     parser.add_argument('--SM_OUTPUT_PREFIX', type=str)
     args = parser.parse_args()
     input_bucket = args.SM_INPUT_BUCKET
-    input_prefix_images = args.SM_INPUT_PREFIX_IMAGES
-    input_prefix_metadata = args.SM_INPUT_PREFIX_METADATA
+    input_prefix_images = args.SM_INPUT_PREFIX_IMAGES  ## images/
+    input_prefix_metadata = args.SM_INPUT_PREFIX_METADATA  ## metadata/
     output_bucket = args.SM_OUTPUT_BUCKET
-    output_prefix = args.SM_OUTPUT_PREFIX
+    output_prefix = args.SM_OUTPUT_PREFIX  ## webdataset/
 
+    random.seed(42)
     s3_client = boto3.client('s3')
 
+    print("Starting data processing...")
     main()

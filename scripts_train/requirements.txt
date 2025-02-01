@@ -1,1 +1,2 @@
 wandb
+webdataset==0.2.100

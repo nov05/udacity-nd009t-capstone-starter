@@ -5,12 +5,15 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-from torchvision import datasets, transforms
+# from torchvision import datasets, transforms
+from torchvision import transforms
+import webdataset as wds
 from torch.utils.data import DataLoader
 from sklearn.utils.class_weight import compute_class_weight
 import os
 import argparse
 import wandb
+
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
@@ -21,6 +24,11 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 # 1. Import SMDebug framework class.  #
 # ====================================#
 # import smdebug.pytorch as smd
+
+
+
+def identity(x):
+     return x
 
 
 
@@ -121,7 +129,7 @@ def train(task):
 
 
 
-def test(task, phase='eval'):
+def eval(task, phase='eval'):
     '''
     TODO: Complete this function that can take a model and a 
           testing data loader and will get the test accuray/loss of the model
@@ -241,13 +249,44 @@ def main(task):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                              std=[0.229, 0.224, 0.225]),
     ]) 
-    train_dataset = datasets.ImageFolder(task.config.train, transform=train_transform)
-    val_dataset = datasets.ImageFolder(task.config.validation, transform=val_transform)
-    test_dataset = datasets.ImageFolder(task.config.test, transform=val_transform)
+    ## Replace TorchVision.datasert.ImageFolder() with WebDataset.dataset() pipe
+    # train_dataset = datasets.ImageFolder(task.config.train, transform=train_transform)
+    # val_dataset = datasets.ImageFolder(task.config.validation, transform=val_transform)
+    # test_dataset = datasets.ImageFolder(task.config.test, transform=val_transform)
+
+    ## For data distributed training, use torch.utils.data.DistributedSampler or WebDataset 
+    path = f"pipe:aws s3 cp {task.config.train} -"
+    train_dataset = (
+        wds.WebDataset(path, 
+                       shardshuffle=True, ## Shuffle shards
+                       nodesplitter=wds.split_by_worker)  ## distributed training
+            .shuffle(1000)  # Shuffle dataset
+            .decode("pil")  
+            .to_tuple("jpg", "cls")  # Tuple of image and label; specify file extensions
+            .map_tuple(train_transform, identity)  # Apply the train transforms to the image
+    )
+    path = f"pipe:aws s3 cp {task.config.validation} -"
+    val_dataset = (
+        wds.WebDataset(path, 
+                       shardshuffle=False,  ## Shuffle shards
+                       nodesplitter=wds.split_by_worker) ## distributed
+            .decode("pil")  
+            .to_tuple("jpg", "cls")  # Tuple of image and label; specify file extensions
+            .map_tuple(val_transform, identity)  # Apply the train transforms to the image
+    )
+    path = f"pipe:aws s3 cp {task.config.test} -"
+    test_dataset = (
+        wds.WebDataset(path, 
+                       shardshuffle=False,  ## Shuffle shards
+                       nodesplitter=wds.split_by_worker)  ## distributed 
+            .decode("pil")  
+            .to_tuple("jpg", "cls")  # Tuple of image and label; specify file extensions
+            .map_tuple(val_transform, identity)  # Apply the train transforms to the image
+    )
     task.train_loader = DataLoader(
         train_dataset, 
         batch_size=task.config.batch_size, 
-        shuffle=True,
+        # shuffle=True,  
         num_workers=task.config.num_cpu,
         pin_memory=True)
     task.val_loader = DataLoader(
@@ -304,7 +343,7 @@ def main(task):
     for epoch in range(task.config.epochs):
         task.current_epoch = epoch
         train(task)
-        test(task, phase='eval')
+        eval(task, phase='eval')
         if task.early_stopping.early_stop:
             print("⚠️ Early stopping")
             break
@@ -313,7 +352,7 @@ def main(task):
 
     ## TODO: Test the model to see its accuracy
     print("🟢 Start testing...")
-    test(task, phase='test')
+    eval(task, phase='test')
 
     ## TODO: Save the trained model
     save(task)
