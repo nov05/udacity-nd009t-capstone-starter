@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-# from torchvision import datasets, transforms
+# from torchvision import datasets
 from torchvision import transforms
 import webdataset as wds
 from torch.utils.data import DataLoader
@@ -35,14 +35,11 @@ from torch.utils.data.distributed import DistributedSampler
 import smdistributed.dataparallel.torch.distributed as dist
 from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
-# Pin GPU to be used to process local rank (one GPU per process)
-torch.cuda.set_device(dist.get_local_rank())
 
 
 
-## for WebDataset
-def identity(x):
-     return x
+def dataset_label_transform(x):
+    return int(x.decode())  ## utf-8
 
 
 
@@ -118,6 +115,7 @@ class EarlyStopping:
             self.counter = 0
 
 
+
 ## PyTorch DDP
 # def ddp_setup(rank: int, world_size: int):
 #     """
@@ -165,7 +163,7 @@ def train(task):
                 "Train Epoch: {} [{}/{} ({:.0f}%)], Loss: {:.6f}".format(
                     task.current_epoch,
                     batch_idx * len(data),
-                    len(task.train_loader.dataset),
+                    len(task.train_loader.sampler),
                     100.0 * batch_idx / len(task.train_loader),
                     loss.item(),
                 )
@@ -230,12 +228,10 @@ def create_net(task):
         task.model.fc.in_features, 
         task.config.num_classes)  # Adjust for the number of classes
     torch.nn.init.kaiming_normal_(task.model.fc.weight)  # Initialize new layers
-    task.model.to(task.config.device)
-    # task.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(task.model)  ## PyTorch DDP
+    task.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(task.model)  ## PyTorch DDP
     ## Wrap model with smdistributed.dataparallel's DistributedDataParallel
-    task.model = DDP(task.model, 
+    task.model = DDP(task.model.to(task.config.device), 
                      device_ids=[torch.cuda.current_device()])  ## single-device Torch module  
-    
 
 
 
@@ -277,9 +273,8 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         if task.config.use_cuda else "cpu"
     )
     print(f"👉 Device: {task.config.device}")
-    print(f"   Device rank: {dist.get_rank()}")  ## SMDDP
-    print(f"   Device local rank: {dist.get_local_rank()}")  ## SMDDP
-    task.config.num_classes = len(train_dataset.classes)
+    print(f"👉 Device rank: {dist.get_rank()}")  ## SMDDP
+    print(f"👉 Device local rank: {dist.get_local_rank()}")  ## SMDDP
     task.config.num_cpu = os.cpu_count()  ## for data loaders
 
     ## before initializing the group process, call set_device, 
@@ -306,88 +301,99 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                              std=[0.229, 0.224, 0.225]),
     ]) 
 
-    ## Replace TorchVision.datasert.ImageFolder() with WebDataset.dataset() pipe
+    ## Replace TorchVision.datasets.ImageFolder() with WebDataset.dataset() pipe
     # train_dataset = datasets.ImageFolder(task.config.train, transform=train_transform)
     # val_dataset = datasets.ImageFolder(task.config.validation, transform=val_transform)
     # test_dataset = datasets.ImageFolder(task.config.test, transform=val_transform)
+    ## For large dataset, 
+    # task.config.num_classes = len(train_dataset.classes) 
 
     ## For data distributed training, use torch.utils.data.DistributedSampler or WebDataset? 
-    path = f"pipe:aws s3 cp {task.config.train} -"
+    path = f"pipe:aws s3 cp {task.config.train_data_path} -"
     train_dataset = (
-        wds.WebDataset(path, 
-                       shardshuffle=True, ## Shuffle shards
-                       nodesplitter=wds.split_by_worker)  ## distributed training
-            .shuffle(1000)  # Shuffle dataset
-            .decode("pil")  
-            .to_tuple("jpg", "cls")  # Tuple of image and label; specify file extensions
-            .map_tuple(train_transform, identity)  # Apply the train transforms to the image
-    )
-    path = f"pipe:aws s3 cp {task.config.validation} -"
+        wds.WebDataset(
+                path, 
+                shardshuffle=True, ## Shuffle shards
+                # nodesplitter=wds.split_by_worker,  ## distributed training
+            )
+            .shuffle(1000)  # Shuffle dataset 
+            ## The tuple names have to be the same with the WebDataset keys
+            ## check the "scripts_process/*convert_to_webdataset*.py" files
+            .to_tuple("image", "label")  ## Tuple of image and label
+            .map_tuple(train_transform,  # Apply the train transforms to the image
+                       dataset_label_transform,
+            )  
+    ) 
+    print(f"👉 train_dataset.classes: {train_dataset.classes}")
+    path = f"pipe:aws s3 cp {task.config.val_data_path} -"
     val_dataset = (
-        wds.WebDataset(path, 
-                       shardshuffle=False,  ## Shuffle shards
-                       nodesplitter=wds.split_by_worker) ## distributed
-            .decode("pil")  
-            .to_tuple("jpg", "cls")  # Tuple of image and label; specify file extensions
-            .map_tuple(val_transform, identity)  # Apply the train transforms to the image
+        wds.WebDataset(
+                path, 
+                shardshuffle=False,  ## No shuffle shards
+                # nodesplitter=wds.split_by_worker ## distributed
+            )   
+            .to_tuple("image", "label")  # Tuple of image and label
+            .map_tuple(val_transform,  # Apply the train transforms to the image
+                       dataset_label_transform,
+            ) 
     )
-    path = f"pipe:aws s3 cp {task.config.test} -"
+    path = f"pipe:aws s3 cp {task.config.test_data_path} -"
     test_dataset = (
-        wds.WebDataset(path, 
-                       shardshuffle=False,  ## Shuffle shards
-                       nodesplitter=wds.split_by_worker)  ## distributed 
-            .decode("pil")  
-            .to_tuple("jpg", "cls")  # Tuple of image and label; specify file extensions
-            .map_tuple(val_transform, identity)  # Apply the train transforms to the image
+        wds.WebDataset(
+                path, 
+                shardshuffle=False,  ## No shuffle shards
+                # nodesplitter=wds.split_by_worker,  ## distributed 
+            ) 
+            .to_tuple("image", "label")  # Tuple of image and label
+            .map_tuple(val_transform,  # Apply the train transforms to the image
+                       dataset_label_transform,
+            ) 
     )
 
     ## handle class imbalance. class weights will be used in the loss functions.
     class_weights = compute_class_weight(
         class_weight='balanced', 
-        classes=np.unique(train_dataset.targets), 
-        y=train_dataset.targets)
+        classes=np.unique(train_dataset.cls), 
+        y=train_dataset.cls)
     class_weights = torch.tensor(
         class_weights, 
         dtype=torch.float32).to(task.config.device)
     
     ## SMDDP: set num_replicas and rank in Torch DistributedSampler
     train_sampler = DistributedSampler(
-            train_dataset,
-            num_replicas=dist.get_world_size(),
-            rank=dist.get_rank())
-    val_sampler = DistributedSampler(
-            val_dataset,
-            num_replicas=dist.get_world_size(),
-            rank=dist.get_rank())
-    test_sampler = DistributedSampler(
-            test_dataset,
-            num_replicas=dist.get_world_size(),
-            rank=dist.get_rank())
+        train_dataset,
+        num_replicas=dist.get_world_size(),
+        rank=dist.get_rank())
+    
     task.train_loader = DataLoader(
         train_dataset, 
-        batch_size=task.config.batch_size, 
+        batch_size=task.config.ddp_batch_size, 
         shuffle=False,  ## Don't shuffle for Distributed Data Parallel (DDP)  
         sampler=train_sampler, # Use the Distributed Sampler
         num_workers=task.config.num_cpu,
         pin_memory=True)
     task.val_loader = DataLoader(
         val_dataset, 
-        batch_size=task.config.batch_size, 
+        batch_size=task.config.ddp_batch_size, 
         shuffle=False,   ## Don't shuffle for eval anyway
-        sampler=val_sampler, # Use the Distributed Sampler
+        ## no DDP sampler
         num_workers=task.config.num_cpu,
         pin_memory=True)
     task.test_loader = DataLoader(
         test_dataset, 
-        batch_size=task.config.batch_size, 
+        batch_size=task.config.ddp_batch_size, 
         shuffle=False,  ## Don't shuffle for eval anyway
-        sampler=test_sampler, # Use the Distributed Sampler
+        # no DDP sampler
         num_workers=task.config.num_cpu,
         pin_memory=True)
     
 
     ## TODO: Initialize a model by calling the net function
     create_net(task)
+    ## SNDDP: Pin each GPU to a single distributed data parallel library process.
+    torch.cuda.set_device(dist.get_local_rank())
+    task.model.cuda(dist.get_local_rank())
+
 
     # ======================================================#
     # 4. Register the SMDebug hook to save output tensors.  #
@@ -399,7 +405,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # criterion = nn.CrossEntropyLoss() 
     task.train_criterion = nn.CrossEntropyLoss(weight=class_weights)  # loss per step
     task.val_criterion = nn.CrossEntropyLoss(weight=class_weights, reduction="sum")  ## loss per epoch
-    if task.config.debug and task.hook:
+    if task.config.debug and task.hook is not None:
         task.hook.register_loss(task.train_criterion)
         task.hook.register_loss(task.val_criterion)
     task.optimizer = optim.AdamW(
@@ -422,7 +428,8 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         task.current_epoch = epoch
         task.train_loader.sampler.set_epoch(epoch)  ## for DDP
         train(task)
-        eval(task, phase='eval')
+        if dist.get_rank()==0:
+            eval(task, phase='eval')
         if task.early_stopping.early_stop:
             print("⚠️ Early stopping")
             break
@@ -430,13 +437,15 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         print(f"👉 Train Epoch: {epoch+1}, Learning rate: {task.optimizer.param_groups[0]['lr']}")
 
     ## TODO: Test the model to see its accuracy
-    print("🟢 Start testing...")
-    eval(task, phase='test')
-    # destroy_process_group()  ## PyTorch DDP
+    if dist.get_rank()==0:
+        print("🟢 Start testing...")
+        eval(task, phase='test')
 
     ## TODO: Save the trained model
     if dist.get_rank()==0:  ## DDP only save one
         save(task)
+
+    # destroy_process_group()  ## PyTorch DDP
 
 
 
@@ -445,13 +454,12 @@ if __name__=='__main__':
 
 
     ## SageMaker DDP
-    is_initialized = dist.is_initialized()
-    if is_initialized:
+    if dist.is_initialized():
         print("🟢 SageMkaer DDP is initialized.")
     else:
         raise RuntimeError("⚠️ SageMaker DDP is not initialized.")
-    print(f"👉 Total GPU count: {dist.get_world_size(group=dist.group.WORLD)}")
-    print(f"👉 Rank: {dist.get_rank(group=dist.group.WORLD)}")  ## the rank of the worker node
+    print(f"👉 Total GPU count: {dist.get_world_size()}")
+    print(f"👉 Rank: {dist.get_rank()}")  ## the rank of the worker node
     print(f"👉 Local Rank: {dist.get_local_rank()}") ## the rank of the GPU
 
     parser=argparse.ArgumentParser()
@@ -468,9 +476,13 @@ if __name__=='__main__':
     parser.add_argument('--model-arch', type=str, default='resnet34')
     parser.add_argument('--model-dir', type=str, default=os.environ['SM_MODEL_DIR'])
     parser.add_argument('--output-data-dir', type=str, default=os.environ['SM_OUTPUT_DATA_DIR'])
-    parser.add_argument('--train', type=str, default=os.environ['SM_CHANNEL_TRAIN'])
-    parser.add_argument('--validation', type=str, default=os.environ['SM_CHANNEL_VALIDATION'])
-    parser.add_argument('--test', type=str, default=os.environ['SM_CHANNEL_TEST'])
+    # parser.add_argument('--train', type=str, default=os.environ['SM_CHANNEL_TRAIN'])
+    # parser.add_argument('--validation', type=str, default=os.environ['SM_CHANNEL_VALIDATION'])
+    # parser.add_argument('--test', type=str, default=os.environ['SM_CHANNEL_TEST'])
+    ## WebDataset paths
+    parser.add_argument('--train-data-path', type=str, default='')
+    parser.add_argument('--val-data-path', type=str, default='')
+    parser.add_argument('--test-data-path', type=str, default='')
     ## Others
     parser.add_argument('--debug', type=str2bool, default=False)
     parser.add_argument('--wandb', type=str2bool, default=False)
@@ -481,7 +493,12 @@ if __name__=='__main__':
     for key, value in vars(args).items():  
         ## Store arguments in the config object
         setattr(task.config, key, value)
-    print(f"👉 configs: {task.config.__dict__}")
+    if dist.get_rank()==0:
+        print(f"👉 configs: {task.config.__dict__}")
+    ## Get batch size per GPU
+    task.config.ddp_batch_size = task.config.batch_size
+    task.config.ddp_batch_size //= (dist.get_world_size() // 1)  ## GPUs per instance
+    task.config.ddp_batch_size = max(task.config.ddp_batch_size, 1)
 
     ## Initialize wandb
     if task.config.wandb and dist.get_rank()==0:
