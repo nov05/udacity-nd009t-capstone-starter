@@ -9,8 +9,6 @@ import torch.optim as optim
 import torchvision
 # from torchvision import datasets
 from torchvision import transforms
-import webdataset as wds
-from torch.utils.data import DataLoader
 # from sklearn.utils.class_weight import compute_class_weight
 import os, io, ast
 from pprint import pprint
@@ -28,8 +26,11 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 # ====================================#
 # import smdebug.pytorch as smd
 
+## Dataset
+import webdataset as wds
 ## PyTorch Distributed Data Parallel (DDP) 
 # import torch.multiprocessing as mp
+from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 # from torch.nn.parallel import DistributedDataParallel as DDP
 # from torch.distributed import init_process_group, destroy_process_group
@@ -39,7 +40,7 @@ from smdistributed.dataparallel.torch.parallel.distributed import DistributedDat
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
 
 
-
+## WebDataset.map() or map_tuple()
 def dataset_label_transform(x):
     return int(x.decode())  ## utf-8
 
@@ -174,7 +175,7 @@ def train(task):
     task.model.train()
     if dist.get_rank()==0:
         print(f"👉 Train Epoch: {task.current_epoch}")
-    for batch_idx, (data, target) in enumerate(task.train_loader):
+    for batch_idx, (data, target) in enumerate(task.train_loader.sampler):
         task.step_counter()
         data, target = data.to(task.config.device), target.to(task.config.device)  ## inputs, labels
         task.optimizer.zero_grad()
@@ -269,8 +270,10 @@ def save(task):
     task.model.eval()
     path = os.path.join(task.config.model_dir, 'model.pth')
     ## save model weights only
-    with open(path, 'wb') as f:
-        torch.save(task.model.state_dict(), f)
+    # with open(path, 'wb') as f:
+    #     torch.save(task.model.state_dict(), f)
+    torch.save(task.model.module.state_dict(), path)  ## SMDDP
+
     ## Please ensure model is saved using torchscript when necessary.
     ## https://pytorch.org/tutorials/beginner/basics/saveloadrun_tutorial.html
     '''
@@ -285,7 +288,7 @@ def save(task):
     scripted_model = torch.jit.script(model)
     scripted_model.save(path) 
     '''
-    print(f"Model saved at '{path}'")
+    print(f"👉 Model saved at '{path}'")
 
 
 
@@ -400,6 +403,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         shuffle=False,
     )
     
+    ## Torch dataloader
     task.train_loader = DataLoader(
         train_dataset, 
         batch_size=task.config.ddp_batch_size, 
@@ -425,7 +429,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
 
     ## TODO: Initialize a model by calling the net function
     create_net(task)
-    ## SNDDP: Pin each GPU to a single distributed data parallel library process.
+    ## SMDDP: Pin each GPU to a single distributed data parallel library process.
     torch.cuda.set_device(dist.get_local_rank())
     task.model.cuda(dist.get_local_rank())
 
@@ -461,7 +465,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ===========================================================#
     for epoch in range(task.config.epochs):
         task.current_epoch = epoch
-        task.train_loader.sampler.set_epoch(epoch)  ## for DDP
+        task.train_loader.sampler.set_epoch(epoch)  ## for Torch DDP
         train(task)
         if dist.get_rank()==0:
             eval(task, phase='eval')
@@ -537,7 +541,7 @@ if __name__=='__main__':
     ## Get batch size per GPU
     task.config.ddp_batch_size = task.config.batch_size
     task.config.ddp_batch_size //= (dist.get_world_size() // 1)  ## GPUs per instance
-    task.config.ddp_batch_size = max(task.config.ddp_batch_size, 1)
+    task.config.ddp_batch_size = int(max(task.config.ddp_batch_size, 1))
 
     ## Initialize wandb
     if task.config.wandb and dist.get_rank()==0:
