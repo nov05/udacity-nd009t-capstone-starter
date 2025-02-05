@@ -11,11 +11,13 @@ import torchvision
 from torchvision import transforms
 import webdataset as wds
 from torch.utils.data import DataLoader
-from sklearn.utils.class_weight import compute_class_weight
-import os
+# from sklearn.utils.class_weight import compute_class_weight
+import os, io, ast
+from pprint import pprint
 import argparse
 import wandb
 
+from PIL import Image
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 
@@ -55,6 +57,19 @@ def average_gradients(model):
 
 
 
+## Wrapper class that returns the number of samples, 
+## which is required by Torch DistributedSampler
+class WebDatasetDDP(wds.WebDataset):
+    def __init__(self, *args, num_samples=0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.num_samples = num_samples
+    
+    def __len__(self):
+        ## Returning the number of samples
+        return self.num_samples
+
+
+
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -64,6 +79,18 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('⚠️ Boolean value expected')
+    
+
+
+def str2dict(s):
+    if not s:
+        return {}
+    try:
+        # Split the string into key-value pairs and convert to a dictionary
+        return {int(k):float(v) for k,v in (item.split('=') for item in s.split(','))}
+    except Exception as e:
+        print(e)
+        raise argparse.ArgumentTypeError(f"⚠️ Invalid dictionary: {s}")
     
 
 
@@ -283,6 +310,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ddp_setup(rank, task.config.world_size)  ## DDP
 
     train_transform = transforms.Compose([
+        lambda x:Image.open(io.BytesIO(x)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(15),
         transforms.RandomResizedCrop(224),
@@ -293,6 +321,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                              std=[0.229, 0.224, 0.225]),
     ])  
     val_transform = transforms.Compose([
+        lambda x:Image.open(io.BytesIO(x)),
         transforms.Resize((224, 224)),  ## default: interpolation=InterpolationMode.BILINEAR
         # transforms.Resize(256),
         # transforms.CenterCrop(224),
@@ -305,16 +334,16 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # train_dataset = datasets.ImageFolder(task.config.train, transform=train_transform)
     # val_dataset = datasets.ImageFolder(task.config.validation, transform=val_transform)
     # test_dataset = datasets.ImageFolder(task.config.test, transform=val_transform)
-    ## For large dataset, 
-    # task.config.num_classes = len(train_dataset.classes) 
 
     ## For data distributed training, use torch.utils.data.DistributedSampler or WebDataset? 
     path = f"pipe:aws s3 cp {task.config.train_data_path} -"
     train_dataset = (
-        wds.WebDataset(
+        # wds.WebDataset(
+        WebDatasetDDP(
                 path, 
                 shardshuffle=True, ## Shuffle shards
                 # nodesplitter=wds.split_by_worker,  ## distributed training
+                num_samples=task.config.train_dataset_size,  ## WebDatasetDDP arg
             )
             .shuffle(1000)  # Shuffle dataset 
             ## The tuple names have to be the same with the WebDataset keys
@@ -322,15 +351,14 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             .to_tuple("image", "label")  ## Tuple of image and label
             .map_tuple(train_transform,  # Apply the train transforms to the image
                        dataset_label_transform,
-            )  
+            )
+            .with_epoch(task.config.epochs),  
     ) 
-    print(f"👉 train_dataset.classes: {train_dataset.classes}")
     path = f"pipe:aws s3 cp {task.config.val_data_path} -"
     val_dataset = (
         wds.WebDataset(
                 path, 
                 shardshuffle=False,  ## No shuffle shards
-                # nodesplitter=wds.split_by_worker ## distributed
             )   
             .to_tuple("image", "label")  # Tuple of image and label
             .map_tuple(val_transform,  # Apply the train transforms to the image
@@ -342,19 +370,24 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         wds.WebDataset(
                 path, 
                 shardshuffle=False,  ## No shuffle shards
-                # nodesplitter=wds.split_by_worker,  ## distributed 
             ) 
             .to_tuple("image", "label")  # Tuple of image and label
             .map_tuple(val_transform,  # Apply the train transforms to the image
                        dataset_label_transform,
             ) 
     )
-
-    ## handle class imbalance. class weights will be used in the loss functions.
-    class_weights = compute_class_weight(
-        class_weight='balanced', 
-        classes=np.unique(train_dataset.cls), 
-        y=train_dataset.cls)
+ 
+    ## Handle class imbalance. class weights will be used in the loss functions.
+    ## train_dataset is an instance of TorchVision.datasets.ImageFolder().
+    ## class_weights is an instance of <class 'numpy.ndarray'>.
+    # class_weights = compute_class_weight(
+    #     class_weight='balanced', 
+    #     classes=np.unique(train_dataset.cls),   
+    #     y=train_dataset.cls)
+    ## Use pre-calculated class weights if the dataset is very large.
+    classes = np.unique(list(task.config.class_weights_dict.keys()))   ## It has to be sorted.
+    task.config.num_classes = len(classes)  ## get number of total classes for net creation
+    class_weights = [task.config.class_weights_dict[k] for k in classes]
     class_weights = torch.tensor(
         class_weights, 
         dtype=torch.float32).to(task.config.device)
@@ -363,7 +396,9 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     train_sampler = DistributedSampler(
         train_dataset,
         num_replicas=dist.get_world_size(),
-        rank=dist.get_rank())
+        rank=dist.get_rank(),
+        shuffle=False,
+    )
     
     task.train_loader = DataLoader(
         train_dataset, 
@@ -459,8 +494,8 @@ if __name__=='__main__':
     else:
         raise RuntimeError("⚠️ SageMaker DDP is not initialized.")
     print(f"👉 Total GPU count: {dist.get_world_size()}")
-    print(f"👉 Rank: {dist.get_rank()}")  ## the rank of the worker node
-    print(f"👉 Local Rank: {dist.get_local_rank()}") ## the rank of the GPU
+    ## the rank of the worker node, and the rank of the GPU
+    print(f"👉 Rank: {dist.get_rank()}, Local Rank: {dist.get_local_rank()}")  
 
     parser=argparse.ArgumentParser()
     ## Hyperparameters passed by the SageMaker estimator
@@ -483,6 +518,9 @@ if __name__=='__main__':
     parser.add_argument('--train-data-path', type=str, default='')
     parser.add_argument('--val-data-path', type=str, default='')
     parser.add_argument('--test-data-path', type=str, default='')
+    ## training data info
+    parser.add_argument('--train-dataset-size', type=int, default=0)
+    parser.add_argument('--class-weights-dict', type=str2dict, default='')
     ## Others
     parser.add_argument('--debug', type=str2bool, default=False)
     parser.add_argument('--wandb', type=str2bool, default=False)
@@ -494,7 +532,8 @@ if __name__=='__main__':
         ## Store arguments in the config object
         setattr(task.config, key, value)
     if dist.get_rank()==0:
-        print(f"👉 configs: {task.config.__dict__}")
+        print('👉 task.config:')
+        pprint(task.config.__dict__)
     ## Get batch size per GPU
     task.config.ddp_batch_size = task.config.batch_size
     task.config.ddp_batch_size //= (dist.get_world_size() // 1)  ## GPUs per instance

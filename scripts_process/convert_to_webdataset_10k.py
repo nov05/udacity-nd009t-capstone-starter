@@ -11,12 +11,23 @@ import glob
 
 
 
-def split_dataset(file_list, ratio=[0.7, 0.15, 0.15]):
-    # Split dataset into train, validation, and test sets (70%, 15%, 15%)
+def split_dataset(file_list, split_ratio=[0.7, 0.15, 0.15]):
+    # Split dataset into train, validation, and test sets, e.g. (70%, 15%, 15%)
     l = len(file_list)
-    train_size = int(l*ratio[0])
-    val_size = int(l*ratio[1])
+    train_size = int(l*split_ratio[0])
+    val_size = int(l*split_ratio[1])
     test_size = l - train_size - val_size
+    webdateset_metadata = {
+        "total_size": l,
+        "split_ratio": split_ratio,
+        "train_size": train_size,
+        "val_size": val_size,
+        "test_size": test_size,
+    }
+    s3_key = "webdataset_metadata.json"
+    s3_client.upload_file(json.dumps(webdateset_metadata), output_bucket, s3_key)
+    print(f"🟢 Successfully uploaded WebDataset metadata file to "
+          f"s3://{output_bucket}/{s3_key}")
     return file_list[:train_size], \
            file_list[train_size:train_size+val_size], \
            file_list[-test_size:]
