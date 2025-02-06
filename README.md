@@ -8,6 +8,8 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 # 👉 **Project Submission**
 
+* [Local conda env](https://gist.github.com/nov05/a6eccfd88ef180d5cae0d0d0e2fc646d?permalink_comment_id=5425643#gistcomment-5425643)  
+
 ### 🏷️ **Metadata Exploratory Data Analysis (EDA)**
 
 * Check [the PySpark EDA notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb) on a subset of the metadata (10K out of 500K JSON files from the original dataset)

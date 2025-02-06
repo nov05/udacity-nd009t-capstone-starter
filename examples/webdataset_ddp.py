@@ -12,8 +12,8 @@ import time
 
 import multiprocessing as mp
 print("👉 Multiprocessing start method:", mp.get_start_method(allow_none=True))
-if mp.get_start_method(allow_none=True) != 'spawn':
-    torch.multiprocessing.set_start_method('spawn')  ## ⚠️
+# if mp.get_start_method(allow_none=True) != 'spawn':
+#     torch.multiprocessing.set_start_method('spawn')  
 
 def key_transform(x):
     return int(x)
@@ -35,17 +35,25 @@ class WebDatasetDDP(IterableDataset):
     def __init__(self,
                  path, 
                  *args, 
-                 num_samples=0, world_size=1, rank=0, 
+                 world_size=1, 
+                 rank=0,  
+                 shuffle_buffer_size=1000,
+                 num_samples=0,
+                 shardshuffle=True,
+                 empty_check=False,
+                 key_transform=None,
+                 train_transform=None,
+                 label_transform=None,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset = (
             wds.WebDataset(
                 path, 
-                shardshuffle=True,
+                shardshuffle=shardshuffle,
                 # nodesplitter=wds.split_by_worker,
-                empty_check=False, 
+                empty_check=empty_check, 
             )
-            .shuffle(1000)  # Shuffle dataset 
+            .shuffle(shuffle_buffer_size)  # Shuffle dataset 
             ## The tuple names have to be the same with the WebDataset keys
             ## check the "scripts_process/*convert_to_webdataset*.py" files
             .to_tuple("__key__", "image", "label")  ## Tuple of image and label
@@ -56,12 +64,11 @@ class WebDatasetDDP(IterableDataset):
                 label_transform,  
             )
         )
-        self.num_samples = num_samples
         self.world_size = world_size
         self.rank = rank
-    
+        self.num_samples = num_samples
+
     def __len__(self):
-        ## Returning the number of samples
         return self.num_samples
     
     def __iter__(self): 
@@ -81,7 +88,18 @@ def main():
     s3_uri = "s3://p5-amazon-bin-images/webdataset/train/train-shard-{000000..000000}.tar"
     path = f"pipe:aws s3 cp {s3_uri} -"  ## write to standard output (stdout)
     train_dataset = (
-        WebDatasetDDP(path, num_samples=1000, world_size=2, rank=0)
+        WebDatasetDDP(
+            path, 
+            world_size=2, 
+            rank=0, 
+            shuffle_buffer_size=1000,
+            num_samples=1000,
+            shardshuffle=True,
+            empty_check=False,
+            key_transform=key_transform,
+            train_transform=train_transform,
+            label_transform=label_transform,
+        )
     ) 
     # ## ⚠️ DistributedSampler doesn't work with IterableDataset
     # train_sampler = DistributedSampler(
@@ -95,12 +113,14 @@ def main():
         train_dataset, 
         batch_size=int(256/2),  ## 2 GPUs 
         shuffle=False,  ## Don't shuffle for Distributed Data Parallel (DDP)  
-        # sampler=train_sampler, # Use the Distributed Sampler ⚠️ Cause error
+        # sampler=train_sampler, # ⚠️ Distributed Sampler causes error
         # num_workers=2, # ⚠️ Cause error in windows
         # persistent_workers=True,
         pin_memory=True,
         collate_fn=collate_fn,
     )
+    print(f"train_loader length: {len(train_loader)}")
+    print(f"train_loader.dataset length: {len(train_loader.dataset)}")
     for batch_idx, batch in enumerate(train_loader):
         print(batch_idx, len(batch[0]), len(batch[1]))
         
@@ -110,9 +130,11 @@ if __name__ == "__main__":
     end_time = time.time()
     print(f"👉 Execution Time: {end_time-start_time} seconds")
 
-## $ python -m webdataset_ddp
-## 4 workers, 
+## On Windows...
 ## 8 workers, 31.25 s
 ## 4 workers, 29.26 s
 ## 2 workers, 29.40 s
-## 1 workers, 
+## 1 workers, 20.52 s
+
+## $ cd examples
+## $ python -m webdataset_ddp

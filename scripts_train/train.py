@@ -30,8 +30,8 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 import webdataset as wds
 ## PyTorch Distributed Data Parallel (DDP) 
 # import torch.multiprocessing as mp
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import DataLoader, IterableDataset
+# from torch.utils.data.distributed import DistributedSampler
 # from torch.nn.parallel import DistributedDataParallel as DDP
 # from torch.distributed import init_process_group, destroy_process_group
 ## SageMaker distributed data parallel library PyTorch API
@@ -40,9 +40,89 @@ from smdistributed.dataparallel.torch.parallel.distributed import DistributedDat
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
 
 
-## WebDataset.map() or map_tuple()
-def dataset_label_transform(x):
-    return int(x.decode())  ## utf-8
+
+def key_transform(x):
+    return int(x)
+
+
+
+class image_transform:
+    def __call__(self, x):
+        return Image.open(io.BytesIO(x))
+    
+
+
+train_transform = transforms.Compose([
+    image_transform(),
+    transforms.RandomResizedCrop(224),
+    transforms.ToTensor(),
+])  
+
+
+
+def label_transform(x):
+    return torch.tensor(int(x.decode()))
+
+
+
+class WebDatasetDDP(IterableDataset):
+    def __init__(self,
+                 path, 
+                 *args, 
+                 world_size=1, 
+                 rank=0,  
+                 shuffle_buffer_size=1000,
+                 num_samples=0,
+                 shardshuffle=True,
+                 empty_check=False,
+                 key_transform=None,
+                 train_transform=None,
+                 label_transform=None,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = (
+            wds.WebDataset(
+                path, 
+                shardshuffle=shardshuffle,
+                ## Official doc: add wds.split_by_node here if you are using multiple nodes
+                nodesplitter=wds.split_by_node, 
+                ## Or "ValueError: you need to add an explicit nodesplitter 
+                ## to your input pipeline for multi-node training"
+                nodesplitter=wds.split_by_worker,
+                empty_check=empty_check, 
+            )
+            .shuffle(shuffle_buffer_size)  # Shuffle dataset 
+            ## The tuple names have to be the same with the WebDataset keys
+            ## check the "scripts_process/*convert_to_webdataset*.py" files
+            .to_tuple("__key__", "image", "label")  ## Tuple of image and label
+            .map_tuple(
+                key_transform,
+                train_transform,  # Apply the train transforms to the image
+                ## lambda function can't not be pickled, hence cause error when num_workers>1 
+                label_transform,  
+            )
+        )
+        self.world_size = world_size
+        self.rank = rank
+        self.num_samples = num_samples
+
+    def __len__(self):
+        return self.num_samples
+    
+    def __iter__(self): 
+        for key,image,label in self.dataset:
+            if key%self.world_size == self.rank:  ## Ensure each GPU gets different data
+                yield (image, label)
+
+
+
+def collate_fn(batch):
+    images, labels = zip(*batch)
+    images = [torch.tensor(np.array(image)) for image in images] 
+    # Stack the images into a single tensor (this assumes the images have the same size)
+    images = torch.stack(images)
+    labels = torch.tensor(labels)
+    return images, labels
 
 
 
@@ -55,19 +135,6 @@ def average_gradients(model):
             group=dist.group.WORLD, 
             async_op=False)
         param.data /= float(dist.get_world_size())
-
-
-
-## Wrapper class that returns the number of samples, 
-## which is required by Torch DistributedSampler
-class WebDatasetDDP(wds.WebDataset):
-    def __init__(self, *args, num_samples=0, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_samples = num_samples
-    
-    def __len__(self):
-        ## Returning the number of samples
-        return self.num_samples
 
 
 
@@ -175,7 +242,7 @@ def train(task):
     task.model.train()
     if dist.get_rank()==0:
         print(f"👉 Train Epoch: {task.current_epoch}")
-    for batch_idx, (data, target) in enumerate(task.train_loader.sampler):
+    for batch_idx, (data, target) in enumerate(task.train_loader):
         task.step_counter()
         data, target = data.to(task.config.device), target.to(task.config.device)  ## inputs, labels
         task.optimizer.zero_grad()
@@ -190,9 +257,9 @@ def train(task):
             print(
                 "Train Epoch: {} [{}/{} ({:.0f}%)], Loss: {:.6f}".format(
                     task.current_epoch,
-                    batch_idx * len(data),
-                    len(task.train_loader.sampler),
-                    100.0 * batch_idx / len(task.train_loader),
+                    batch_idx * len(data),  ## samples that have been used
+                    len(task.train_loader.dataset),  ## number of samples
+                    100.0 * batch_idx / (len(task.train_loader) / dist.get_world_size()),
                     loss.item(),
                 )
             )
@@ -313,7 +380,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ddp_setup(rank, task.config.world_size)  ## DDP
 
     train_transform = transforms.Compose([
-        lambda x:Image.open(io.BytesIO(x)),
+        image_transform(),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(15),
         transforms.RandomResizedCrop(224),
@@ -324,7 +391,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                              std=[0.229, 0.224, 0.225]),
     ])  
     val_transform = transforms.Compose([
-        lambda x:Image.open(io.BytesIO(x)),
+        image_transform(),
         transforms.Resize((224, 224)),  ## default: interpolation=InterpolationMode.BILINEAR
         # transforms.Resize(256),
         # transforms.CenterCrop(224),
@@ -341,21 +408,18 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     ## For data distributed training, use torch.utils.data.DistributedSampler or WebDataset? 
     path = f"pipe:aws s3 cp {task.config.train_data_path} -"
     train_dataset = (
-        # wds.WebDataset(
         WebDatasetDDP(
-                path, 
-                shardshuffle=True, ## Shuffle shards
-                # nodesplitter=wds.split_by_worker,  ## distributed training
-                num_samples=task.config.train_dataset_size,  ## WebDatasetDDP arg
-            )
-            .shuffle(1000)  # Shuffle dataset 
-            ## The tuple names have to be the same with the WebDataset keys
-            ## check the "scripts_process/*convert_to_webdataset*.py" files
-            .to_tuple("image", "label")  ## Tuple of image and label
-            .map_tuple(train_transform,  # Apply the train transforms to the image
-                       dataset_label_transform,
-            )
-            .with_epoch(task.config.epochs),  
+            path, 
+            num_samples=task.config.train_dataset_size,
+            world_size=dist.get_world_size(), 
+            rank=dist.get_rank(), 
+            shuffle_buffer_size=1000,
+            shardshuffle=True,
+            empty_check=False,
+            key_transform=key_transform,
+            train_transform=train_transform,
+            label_transform=label_transform,
+        )
     ) 
     path = f"pipe:aws s3 cp {task.config.val_data_path} -"
     val_dataset = (
@@ -363,9 +427,11 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                 path, 
                 shardshuffle=False,  ## No shuffle shards
             )   
-            .to_tuple("image", "label")  # Tuple of image and label
-            .map_tuple(val_transform,  # Apply the train transforms to the image
-                       dataset_label_transform,
+            .to_tuple("__key__", "image", "label")  ## Tuple of image and label
+            .map_tuple(
+                key_transform,
+                val_transform, 
+                label_transform,  
             ) 
     )
     path = f"pipe:aws s3 cp {task.config.test_data_path} -"
@@ -374,9 +440,11 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                 path, 
                 shardshuffle=False,  ## No shuffle shards
             ) 
-            .to_tuple("image", "label")  # Tuple of image and label
-            .map_tuple(val_transform,  # Apply the train transforms to the image
-                       dataset_label_transform,
+            .to_tuple("__key__", "image", "label")  ## Tuple of image and label
+            .map_tuple(
+                key_transform,
+                val_transform,  
+                label_transform,  
             ) 
     )
  
@@ -395,36 +463,45 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         class_weights, 
         dtype=torch.float32).to(task.config.device)
     
-    ## SMDDP: set num_replicas and rank in Torch DistributedSampler
-    train_sampler = DistributedSampler(
-        train_dataset,
-        num_replicas=dist.get_world_size(),
-        rank=dist.get_rank(),
-        shuffle=False,
-    )
+    # ## SMDDP: set num_replicas and rank in Torch DistributedSampler
+    # train_sampler = DistributedSampler(  ## ⚠️ doesn't work with WebDataset
+    #     train_dataset,
+    #     num_replicas=dist.get_world_size(),
+    #     rank=dist.get_rank(),
+    #     shuffle=False,
+    # )
     
     ## Torch dataloader
     task.train_loader = DataLoader(
         train_dataset, 
         batch_size=task.config.ddp_batch_size, 
         shuffle=False,  ## Don't shuffle for Distributed Data Parallel (DDP)  
-        sampler=train_sampler, # Use the Distributed Sampler
+        # sampler=train_sampler, # ⚠️ Distributed Sampler + WebDataset causes error
         num_workers=task.config.num_cpu,
-        pin_memory=True)
+        persistent_workers=True,
+        # pin_memory=True
+        collate_fn=collate_fn,
+    )
     task.val_loader = DataLoader(
         val_dataset, 
         batch_size=task.config.ddp_batch_size, 
         shuffle=False,   ## Don't shuffle for eval anyway
         ## no DDP sampler
         num_workers=task.config.num_cpu,
-        pin_memory=True)
+        persistent_workers=True,
+        # pin_memory=True,
+        collate_fn=collate_fn,
+    )
     task.test_loader = DataLoader(
         test_dataset, 
         batch_size=task.config.ddp_batch_size, 
         shuffle=False,  ## Don't shuffle for eval anyway
         # no DDP sampler
         num_workers=task.config.num_cpu,
-        pin_memory=True)
+        persistent_workers=True,
+        # pin_memory=True,
+        collate_fn=collate_fn,
+    )
     
 
     ## TODO: Initialize a model by calling the net function
@@ -465,7 +542,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ===========================================================#
     for epoch in range(task.config.epochs):
         task.current_epoch = epoch
-        task.train_loader.sampler.set_epoch(epoch)  ## for Torch DDP
+        # task.train_loader.sampler.set_epoch(epoch)  ## ⚠️ for Torch DDP
         train(task)
         if dist.get_rank()==0:
             eval(task, phase='eval')
@@ -540,7 +617,7 @@ if __name__=='__main__':
         pprint(task.config.__dict__)
     ## Get batch size per GPU
     task.config.ddp_batch_size = task.config.batch_size
-    task.config.ddp_batch_size //= (dist.get_world_size() // 1)  ## GPUs per instance
+    task.config.ddp_batch_size //= (dist.get_world_size() // 1)  
     task.config.ddp_batch_size = int(max(task.config.ddp_batch_size, 1))
 
     ## Initialize wandb
