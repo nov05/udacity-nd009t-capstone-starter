@@ -157,7 +157,7 @@ def collate_fn(batch):
 
 ## SageMaker DDP
 def average_gradients(model):
-    for param in model.parameters:
+    for param in model.parameters():
         dist.all_reduce(
             param, 
             op=dist.ReduceOp.SUM, 
