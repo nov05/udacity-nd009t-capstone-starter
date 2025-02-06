@@ -9,8 +9,10 @@ import torch.optim as optim
 import torchvision
 # from torchvision import datasets
 from torchvision import transforms
+## For streamed training data, we can't access the full dataset, 
+## hence use pre-calculated or esitmated class weights
 # from sklearn.utils.class_weight import compute_class_weight
-import os, io, ast
+import os, io
 from pprint import pprint
 import argparse
 import wandb
@@ -34,7 +36,7 @@ from torch.utils.data import DataLoader, IterableDataset
 # from torch.utils.data.distributed import DistributedSampler
 # from torch.nn.parallel import DistributedDataParallel as DDP
 # from torch.distributed import init_process_group, destroy_process_group
-## SageMaker distributed data parallel library PyTorch API
+## SageMaker distributed data parallel library PyTorch APIs
 import smdistributed.dataparallel.torch.distributed as dist
 from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
@@ -67,31 +69,34 @@ def label_transform(x):
 
 
 
+## WebDataset class inherits from IterableDataset class
 class WebDatasetDDP(IterableDataset):
     def __init__(self,
                  path,  
+                 num_samples=0,
                  world_size=1, 
                  rank=0,  
+                 no_shuffle=False,
                  shuffle_shard_size=100,
                  split_by_node=False,
                  split_by_worker=False,
-                 num_samples=0,
                 #  shardshuffle=True,
                 #  empty_check=False,
                  key_transform=None,
                  train_transform=None,
                  label_transform=None,
                  shuffle_sample_size=1000,
-                 batch_size=64,
+                #  batch_size=64,
                 ):
         super().__init__()
         self.dataset = (
+## WebDataset
 ## https://github.com/webdataset/webdataset?tab=readme-ov-file#the-webdataset-library
             # wds.WebDataset(
             #     path, 
             #     shardshuffle=shardshuffle,
             #     ## Official doc: add wds.split_by_node here if you are using multiple nodes
-            #     nodesplitter=wds.split_by_node, 
+            #     # nodesplitter=wds.split_by_node, 
             #     ## Or "ValueError: you need to add an explicit nodesplitter 
             #     ## to your input pipeline for multi-node training"
             #     nodesplitter=wds.split_by_worker,
@@ -107,18 +112,19 @@ class WebDatasetDDP(IterableDataset):
             #     ## lambda function can't not be pickled, hence cause error when num_workers>1 
             #     label_transform,  
             # )
+## WebDataset pipeline
 ## https://github.com/webdataset/webdataset?tab=readme-ov-file#the-webdataset-pipeline-api
             wds.DataPipeline(
                 wds.SimpleShardList(path),
                 # at this point we have an iterator over all the shards
-                wds.shuffle(shuffle_shard_size),
+                wds.shuffle(shuffle_shard_size) if not no_shuffle else None,
                 # add wds.split_by_node here if you are using multiple nodes
                 wds.split_by_node if split_by_node else None,
                 wds.split_by_worker if split_by_worker else None,
                 # at this point, we have an iterator over the shards assigned to each worker
                 wds.tarfile_to_samples(),
                 # this shuffles the samples in memory
-                wds.shuffle(shuffle_sample_size),
+                wds.shuffle(shuffle_sample_size) if not no_shuffle else None,
                 # this decodes the images and json
                 # wds.decode("pil"),
                 wds.to_tuple("__key__", "image", "label"),
@@ -128,19 +134,22 @@ class WebDatasetDDP(IterableDataset):
                     train_transform, 
                     label_transform,  
                 ),
-                wds.shuffle(shuffle_sample_size),
+                wds.shuffle(shuffle_sample_size) if not no_shuffle else None,
                 # wds.batched(batch_size),
             )
         )
         self.world_size = world_size
         self.rank = rank
         self.num_samples = num_samples
+        self.split_by_node = split_by_node
+        self.split_by_worker = split_by_worker
 
     def __len__(self):
         return self.num_samples
     
     def __iter__(self): 
         for key,image,label in self.dataset:  ## Use dataset keys to distribute data
+            ## ⚠️ need a fix
             if key%self.world_size == self.rank:  ## Ensure each GPU gets different data
                 yield (image, label)
 
@@ -269,47 +278,54 @@ def train(task):
         task.hook.set_mode(smd.modes.TRAIN)
     ## Set the model to training mode
     task.model.train()
-    if dist.get_rank()==0:
-        print(f"👉 Train Epoch: {task.current_epoch}")
+    num_samples = 0.
     for batch_idx, (data, target) in enumerate(task.train_loader):
+        num_samples += len(target)
         task.step_counter()
         data, target = data.to(task.config.device), target.to(task.config.device)  ## images, labels
         task.optimizer.zero_grad()
-        output = task.model(data)
+        output = task.model(data)  
         loss = task.train_criterion(output, target)
         if task.config.wandb and dist.get_rank()==0:
-            wandb.log({"train_loss": loss.item()}, step=task.step_counter.total_steps)
+            wandb.log({f"Rank {dist.get_rank()}, train_loss": loss.item()}, 
+                      step=task.step_counter.total_steps)
         loss.backward()
         average_gradients(task.model)  ## SageMaker DDP
         task.optimizer.step()
         torch.cuda.empty_cache()
-        if batch_idx%100==0 and dist.get_rank()==0:  ## Print every 100 batches
+        if batch_idx%10 == 0:  ## Print every 10 batches
             print(
-                "Train Epoch: {} [{}/{} ({:.0f}%)], Loss: {:.6f}".format(
-                    task.current_epoch,
-                    batch_idx * len(data),  ## samples that have been used
-                    len(task.train_loader.dataset),  ## number of samples
-                    100.0 * batch_idx / (len(task.train_loader) / dist.get_world_size()),
-                    loss.item(),
+                "🔹 Rank {}, Train Epoch: {} [{}/{} ({:.0f}%)], Loss: {:.6f}".format(
+                    dist.get_rank(),                                         ## 1. global rank
+                    task.current_epoch,                                      ## 2. current epoch
+                    task.config.batch_size_ddp*(batch_idx-1) + num_samples,  ## 3. samples that have been used
+                    len(task.train_loader.dataset),                          ## 4. total number of samples
+                                                                             ## 5. batch progress within the epoch
+                    100.0 * batch_idx / (len(task.train_loader)/task.config.batch_size_ddp), 
+                    loss.item(),                                             ## 6. loss value
                 )
             )
 
 
 
-def eval(task, phase='eval'):
+def eval(task, phase='val'):
     '''
     TODO: Complete this function that can take a model and a 
           testing data loader and will get the test accuray/loss of the model
           Remember to include any debugging/profiling hooks that you might need
+    NOTE: 1. val and test are not distributed. 
+          2. len(data_loader.dataset) is technically unknown,
+             unless it is pre-set as hyperparameter
     '''
     # ===================================================#
-    # 3. Set the SMDebug hook for the validation phase. #
+    # 3. Set the SMDebug hook for the validation phase.  #
     # ===================================================#
     if task.config.debug and task.hook: 
         task.hook.set_mode(smd.modes.EVAL)
     task.model.eval()
     test_loss = 0.
     correct = 0.
+    num_samples = 0.
     data_loader = task.val_loader if phase=='eval' else task.test_loader
     with torch.no_grad():
         for data, target in data_loader:
@@ -318,24 +334,26 @@ def eval(task, phase='eval'):
             test_loss += task.val_criterion(output, target).item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
-    test_loss /= len(data_loader.dataset)
-    if phase=='eval': 
+            num_samples += len(target)
+    test_loss /= num_samples # len(data_loader.dataset) 
+    if phase=='val': 
         task.early_stopping(test_loss)
-        if task.config.wandb and dist.get_rank()==0:
-            wandb.log({f"{phase}_loss_epoch": test_loss}, step=task.step_counter.total_steps)
-    accuracy = 100.*correct/len(data_loader.dataset)
+        if task.config.wandb:
+            wandb.log({f"{phase}_loss_epoch": test_loss}, 
+                      step=task.step_counter.total_steps)
+    accuracy = 100.*correct/num_samples # len(data_loader.dataset)
     print(
         "\n👉 {}: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n".format(
             phase.upper(),
             test_loss, 
             correct, 
-            len(data_loader.dataset), 
+            num_samples, # len(data_loader.dataset), 
             accuracy
         )
     )
-    if phase=='eval' and task.config.wandb:
+    if phase=='val' and task.config.wandb:
         wandb.log(
-            {f"rank {dist.get_rank()}: {phase}_accuracy_epoch": accuracy}, 
+            {f"{phase}_accuracy_epoch": accuracy}, 
             step=task.step_counter.total_steps
         )
 
@@ -369,9 +387,9 @@ def save(task):
     task.model.eval()
     path = os.path.join(task.config.model_dir, 'model.pth')
     ## save model weights only
-    # with open(path, 'wb') as f:
-    #     torch.save(task.model.state_dict(), f)
-    torch.save(task.model.module.state_dict(), path)  ## SMDDP
+    with open(path, 'wb') as f:
+        torch.save(task.model.state_dict(), f)
+    # torch.save(task.model.module.state_dict(), path)  ## SageMaker Model Parallel? SMDDP
 
     ## Please ensure model is saved using torchscript when necessary.
     ## https://pytorch.org/tutorials/beginner/basics/saveloadrun_tutorial.html
@@ -442,14 +460,12 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     train_dataset = (
         WebDatasetDDP(
             path, 
-            num_samples=task.config.train_dataset_size,
+            num_samples=task.config.train_data_size,
             world_size=dist.get_world_size(), 
             rank=dist.get_rank(), 
             split_by_node=True,
             split_by_worker=True,
             shuffle_sample_size=1000,
-            # shardshuffle=True,
-            # empty_check=False,
             key_transform=key_transform,
             train_transform=train_transform,
             label_transform=label_transform,
@@ -457,29 +473,25 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     ) 
     path = f"pipe:aws s3 cp {task.config.val_data_path} -"
     val_dataset = (
-        wds.WebDataset(
-                path, 
-                shardshuffle=False,  ## No shuffle shards
-            )   
-            .to_tuple("__key__", "image", "label")  ## Tuple of image and label
-            .map_tuple(
-                key_transform,
-                val_transform, 
-                label_transform,  
-            ) 
+        WebDatasetDDP(
+            path, 
+            num_samples=task.config.val_data_size,
+            no_shuffle=True,
+            key_transform=key_transform,
+            train_transform=train_transform,
+            label_transform=label_transform,                 
+        )   
     )
     path = f"pipe:aws s3 cp {task.config.test_data_path} -"
     test_dataset = (
-        wds.WebDataset(
-                path, 
-                shardshuffle=False,  ## No shuffle shards
-            ) 
-            .to_tuple("__key__", "image", "label")  ## Tuple of image and label
-            .map_tuple(
-                key_transform,
-                val_transform,  
-                label_transform,  
-            ) 
+        WebDatasetDDP(
+            path, 
+            num_samples=task.config.test_data_size,
+            no_shuffle=True,
+            key_transform=key_transform,
+            train_transform=train_transform,
+            label_transform=label_transform,                 
+        )  
     )
  
     ## Handle class imbalance. class weights will be used in the loss functions.
@@ -508,12 +520,12 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     ## Torch dataloader
     task.train_loader = DataLoader(
         train_dataset, 
-        batch_size=task.config.ddp_batch_size, 
+        batch_size=task.config.batch_size_ddp, 
         shuffle=False,  ## Don't shuffle for Distributed Data Parallel (DDP)  
         # sampler=train_sampler, # ⚠️ Distributed Sampler + WebDataset causes error
-        # num_workers=task.config.num_cpu,
-        # persistent_workers=True,
-        # pin_memory=True
+        num_workers=task.config.num_cpu,
+        persistent_workers=True,
+        pin_memory=True,
         collate_fn=collate_fn,
     )
     task.val_loader = DataLoader(
@@ -521,9 +533,9 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         batch_size=task.config.batch_size, 
         shuffle=False,   ## Don't shuffle for eval anyway
         ## no DDP sampler
-        # num_workers=task.config.num_cpu,
-        # persistent_workers=True,
-        # pin_memory=True,
+        num_workers=task.config.num_cpu,
+        persistent_workers=True,
+        pin_memory=True,
         collate_fn=collate_fn,
     )
     task.test_loader = DataLoader(
@@ -531,9 +543,9 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         batch_size=task.config.batch_size, 
         shuffle=False,  ## Don't shuffle for eval anyway
         # no DDP sampler
-        # num_workers=task.config.num_cpu,
-        # persistent_workers=True,
-        # pin_memory=True,
+        num_workers=task.config.num_cpu,
+        persistent_workers=True,
+        pin_memory=True,
         collate_fn=collate_fn,
     )
     
@@ -576,15 +588,17 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ===========================================================#
     for epoch in range(task.config.epochs):
         task.current_epoch = epoch
+        if dist.get_rank()==0:
+            print(f"👉 Train Epoch: {epoch}, "
+                  f"Learning Rate: {task.optimizer.param_groups[0]['lr']}")
         # task.train_loader.sampler.set_epoch(epoch)  ## ⚠️ for Torch DDP
         train(task)
         if dist.get_rank()==0:
-            eval(task, phase='eval')
+            eval(task, phase='val')
             if task.early_stopping.early_stop:
                 print("⚠️ Early stopping")
                 break
         task.scheduler.step()  ## Update learning rate after every epoch
-        print(f"👉 Train Epoch: {epoch+1}, Learning Rate: {task.optimizer.param_groups[0]['lr']}")
 
     ## TODO: Test the model to see its accuracy
     if dist.get_rank()==0:
@@ -634,7 +648,9 @@ if __name__=='__main__':
     parser.add_argument('--val-data-path', type=str, default='')
     parser.add_argument('--test-data-path', type=str, default='')
     ## training data info
-    parser.add_argument('--train-dataset-size', type=int, default=0)
+    parser.add_argument('--train-data-size', type=int, default=0)
+    parser.add_argument('--val-data-size', type=int, default=0)
+    parser.add_argument('--test-data-size', type=int, default=0)
     parser.add_argument('--class-weights-dict', type=str2dict, default='')
     ## Others
     parser.add_argument('--debug', type=str2bool, default=False)
@@ -650,9 +666,9 @@ if __name__=='__main__':
         print('👉 task.config:')
         pprint(task.config.__dict__)
     ## Get batch size per GPU
-    task.config.ddp_batch_size = task.config.batch_size
-    task.config.ddp_batch_size //= (dist.get_world_size() // 1)  
-    task.config.ddp_batch_size = int(max(task.config.ddp_batch_size, 1))
+    task.config.batch_size_ddp = task.config.batch_size
+    task.config.batch_size_ddp //= (dist.get_world_size() // 1)  
+    task.config.batch_size_ddp = int(max(task.config.batch_size_ddp, 1))
 
     ## Initialize wandb
     if task.config.wandb and dist.get_rank()==0:

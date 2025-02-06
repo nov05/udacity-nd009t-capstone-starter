@@ -2,6 +2,12 @@
 **Udacity AWS Machine Learning Engineer Nanodegree (ND189)**   
 Amazon Bin Object Counting, a demonstration of end-to-end machine learning engineering skills on AWS  
 
+### 🏷️ **Technical highlights:** 
+
+* For demo purpose, 10,441 data with 5 classes are retrieved from the original 500,000 dataset.  
+* **AWS Athena CTAS and query** are used to do the expoloratory data analysis (EDA).  
+* **AWS SageMaker ScriptProcessor** and a **custom Docker image** are used to convert the 10K-dataset to **WebDataset** .tar files.
+
 <br><br><br>  
 
 ---  
