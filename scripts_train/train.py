@@ -61,45 +61,75 @@ train_transform = transforms.Compose([
 
 
 def label_transform(x):
-    return torch.tensor(int(x.decode()))
+    ## Original lables are (1,2,3,4,5)
+    ## Convert to (0,1,2,3,4)
+    return torch.tensor(int(x.decode())-1, dtype=torch.int64)
 
 
 
 class WebDatasetDDP(IterableDataset):
     def __init__(self,
-                 path, 
-                 *args, 
+                 path,  
                  world_size=1, 
                  rank=0,  
-                 shuffle_buffer_size=1000,
+                 shuffle_shard_size=100,
+                 split_by_node=False,
+                 split_by_worker=False,
                  num_samples=0,
-                 shardshuffle=True,
-                 empty_check=False,
+                #  shardshuffle=True,
+                #  empty_check=False,
                  key_transform=None,
                  train_transform=None,
                  label_transform=None,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+                 shuffle_sample_size=1000,
+                 batch_size=64,
+                ):
+        super().__init__()
         self.dataset = (
-            wds.WebDataset(
-                path, 
-                shardshuffle=shardshuffle,
-                ## Official doc: add wds.split_by_node here if you are using multiple nodes
-                nodesplitter=wds.split_by_node, 
-                ## Or "ValueError: you need to add an explicit nodesplitter 
-                ## to your input pipeline for multi-node training"
-                nodesplitter=wds.split_by_worker,
-                empty_check=empty_check, 
-            )
-            .shuffle(shuffle_buffer_size)  # Shuffle dataset 
-            ## The tuple names have to be the same with the WebDataset keys
-            ## check the "scripts_process/*convert_to_webdataset*.py" files
-            .to_tuple("__key__", "image", "label")  ## Tuple of image and label
-            .map_tuple(
-                key_transform,
-                train_transform,  # Apply the train transforms to the image
-                ## lambda function can't not be pickled, hence cause error when num_workers>1 
-                label_transform,  
+## https://github.com/webdataset/webdataset?tab=readme-ov-file#the-webdataset-library
+            # wds.WebDataset(
+            #     path, 
+            #     shardshuffle=shardshuffle,
+            #     ## Official doc: add wds.split_by_node here if you are using multiple nodes
+            #     nodesplitter=wds.split_by_node, 
+            #     ## Or "ValueError: you need to add an explicit nodesplitter 
+            #     ## to your input pipeline for multi-node training"
+            #     nodesplitter=wds.split_by_worker,
+            #     empty_check=empty_check, 
+            # )
+            # .shuffle(shuffle_buffer_size)  # Shuffle dataset 
+            # ## The tuple names have to be the same with the WebDataset keys
+            # ## check the "scripts_process/*convert_to_webdataset*.py" files
+            # .to_tuple("__key__", "image", "label")  ## Tuple of image and label
+            # .map_tuple(
+            #     key_transform,
+            #     train_transform,  # Apply the train transforms to the image
+            #     ## lambda function can't not be pickled, hence cause error when num_workers>1 
+            #     label_transform,  
+            # )
+## https://github.com/webdataset/webdataset?tab=readme-ov-file#the-webdataset-pipeline-api
+            wds.DataPipeline(
+                wds.SimpleShardList(path),
+                # at this point we have an iterator over all the shards
+                wds.shuffle(shuffle_shard_size),
+                # add wds.split_by_node here if you are using multiple nodes
+                wds.split_by_node if split_by_node else None,
+                wds.split_by_worker if split_by_worker else None,
+                # at this point, we have an iterator over the shards assigned to each worker
+                wds.tarfile_to_samples(),
+                # this shuffles the samples in memory
+                wds.shuffle(shuffle_sample_size),
+                # this decodes the images and json
+                # wds.decode("pil"),
+                wds.to_tuple("__key__", "image", "label"),
+                # wds.map(preprocess),
+                wds.map_tuple(
+                    key_transform,
+                    train_transform, 
+                    label_transform,  
+                ),
+                wds.shuffle(shuffle_sample_size),
+                # wds.batched(batch_size),
             )
         )
         self.world_size = world_size
@@ -110,7 +140,7 @@ class WebDatasetDDP(IterableDataset):
         return self.num_samples
     
     def __iter__(self): 
-        for key,image,label in self.dataset:
+        for key,image,label in self.dataset:  ## Use dataset keys to distribute data
             if key%self.world_size == self.rank:  ## Ensure each GPU gets different data
                 yield (image, label)
 
@@ -118,10 +148,9 @@ class WebDatasetDDP(IterableDataset):
 
 def collate_fn(batch):
     images, labels = zip(*batch)
-    images = [torch.tensor(np.array(image)) for image in images] 
     # Stack the images into a single tensor (this assumes the images have the same size)
     images = torch.stack(images)
-    labels = torch.tensor(labels)
+    labels = torch.stack(labels)
     return images, labels
 
 
@@ -244,7 +273,7 @@ def train(task):
         print(f"👉 Train Epoch: {task.current_epoch}")
     for batch_idx, (data, target) in enumerate(task.train_loader):
         task.step_counter()
-        data, target = data.to(task.config.device), target.to(task.config.device)  ## inputs, labels
+        data, target = data.to(task.config.device), target.to(task.config.device)  ## images, labels
         task.optimizer.zero_grad()
         output = task.model(data)
         loss = task.train_criterion(output, target)
@@ -253,6 +282,7 @@ def train(task):
         loss.backward()
         average_gradients(task.model)  ## SageMaker DDP
         task.optimizer.step()
+        torch.cuda.empty_cache()
         if batch_idx%100==0 and dist.get_rank()==0:  ## Print every 100 batches
             print(
                 "Train Epoch: {} [{}/{} ({:.0f}%)], Loss: {:.6f}".format(
@@ -326,7 +356,9 @@ def create_net(task):
     task.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(task.model)  ## PyTorch DDP
     ## Wrap model with smdistributed.dataparallel's DistributedDataParallel
     task.model = DDP(task.model.to(task.config.device), 
-                     device_ids=[torch.cuda.current_device()])  ## single-device Torch module  
+                     device_ids=[torch.cuda.current_device()])  ## single-device Torch module 
+    print(f"👉 Rank {dist.get_rank()}: "
+          f"Model {task.config.model_arch} has been created successfully.") 
 
 
 
@@ -369,9 +401,9 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         torch.device("cuda" if torch.cuda.is_available() else "cpu") 
         if task.config.use_cuda else "cpu"
     )
-    print(f"👉 Device: {task.config.device}")
-    print(f"👉 Device rank: {dist.get_rank()}")  ## SMDDP
-    print(f"👉 Device local rank: {dist.get_local_rank()}")  ## SMDDP
+    print(f"👉 Device: {task.config.device}, "
+          f"Rank: {dist.get_rank()}, "  ## SMDDP
+          f"Local rank: {dist.get_local_rank()}")  ## SMDDP
     task.config.num_cpu = os.cpu_count()  ## for data loaders
 
     ## before initializing the group process, call set_device, 
@@ -413,9 +445,11 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             num_samples=task.config.train_dataset_size,
             world_size=dist.get_world_size(), 
             rank=dist.get_rank(), 
-            shuffle_buffer_size=1000,
-            shardshuffle=True,
-            empty_check=False,
+            split_by_node=True,
+            split_by_worker=True,
+            shuffle_sample_size=1000,
+            # shardshuffle=True,
+            # empty_check=False,
             key_transform=key_transform,
             train_transform=train_transform,
             label_transform=label_transform,
@@ -477,28 +511,28 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         batch_size=task.config.ddp_batch_size, 
         shuffle=False,  ## Don't shuffle for Distributed Data Parallel (DDP)  
         # sampler=train_sampler, # ⚠️ Distributed Sampler + WebDataset causes error
-        num_workers=task.config.num_cpu,
-        persistent_workers=True,
+        # num_workers=task.config.num_cpu,
+        # persistent_workers=True,
         # pin_memory=True
         collate_fn=collate_fn,
     )
     task.val_loader = DataLoader(
         val_dataset, 
-        batch_size=task.config.ddp_batch_size, 
+        batch_size=task.config.batch_size, 
         shuffle=False,   ## Don't shuffle for eval anyway
         ## no DDP sampler
-        num_workers=task.config.num_cpu,
-        persistent_workers=True,
+        # num_workers=task.config.num_cpu,
+        # persistent_workers=True,
         # pin_memory=True,
         collate_fn=collate_fn,
     )
     task.test_loader = DataLoader(
         test_dataset, 
-        batch_size=task.config.ddp_batch_size, 
+        batch_size=task.config.batch_size, 
         shuffle=False,  ## Don't shuffle for eval anyway
         # no DDP sampler
-        num_workers=task.config.num_cpu,
-        persistent_workers=True,
+        # num_workers=task.config.num_cpu,
+        # persistent_workers=True,
         # pin_memory=True,
         collate_fn=collate_fn,
     )
@@ -546,11 +580,11 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         train(task)
         if dist.get_rank()==0:
             eval(task, phase='eval')
-        if task.early_stopping.early_stop:
-            print("⚠️ Early stopping")
-            break
+            if task.early_stopping.early_stop:
+                print("⚠️ Early stopping")
+                break
         task.scheduler.step()  ## Update learning rate after every epoch
-        print(f"👉 Train Epoch: {epoch+1}, Learning rate: {task.optimizer.param_groups[0]['lr']}")
+        print(f"👉 Train Epoch: {epoch+1}, Learning Rate: {task.optimizer.param_groups[0]['lr']}")
 
     ## TODO: Test the model to see its accuracy
     if dist.get_rank()==0:
@@ -558,7 +592,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         eval(task, phase='test')
 
     ## TODO: Save the trained model
-    if dist.get_rank()==0:  ## DDP only save one
+    if dist.get_rank()==0:  ## DDP only save one model
         save(task)
 
     # destroy_process_group()  ## PyTorch DDP
