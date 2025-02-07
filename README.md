@@ -10,13 +10,13 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
   
 - **AWS Glue-Spark** jobs were developed locally using **Docker** and **VS Code** for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
   
-- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a **custom Docker image**. The **10K dataset** was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
+- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The **10K dataset** was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
 
 - **WebDataset** is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.
 
 - **AWS SageMaker Distributed Data Parallel (SMDDP)** framework is combined with **WebDataset** for distributed training. SMDDP efficiently manages tasks such as model replication across GPU nodes, asynchronous training, and synchronization of model weights across nodes. Meanwhile, **WebDataset** handles the shuffling, transforming, node-wise data splitting, and batching of training data, ensuring seamless data distribution for each node during training.  
 
-All these techniques can be easily applied to large-scale datasets, including terabyte-sized training data, ensuring efficient processing and scalability without overwhelming infrastructure resources.  
+All these techniques can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with debugging and profiling), and **inference**. While **monitoring** was not implemented in this project, it has been demonstrated in previous hands-on exercises.
 
 
 <br><br><br>  
@@ -41,7 +41,7 @@ All these techniques can be easily applied to large-scale datasets, including te
 
 ### 🏷️ **Notes**
 
-* [SageMaker input mode](https://docs.google.com/document/d/1SNQuYrCOy6s5Zg3NXdkrujOyDPP1VA4b8HKAqEoJvM4)   
+* [SageMaker input mode and WebDataset](https://docs.google.com/document/d/1SNQuYrCOy6s5Zg3NXdkrujOyDPP1VA4b8HKAqEoJvM4)   
 * [SageMaker PyTorch distributed training](https://docs.google.com/document/d/12yN589I95IdyJjOwoxH5uQf08bfCvnXvIYRYChFw8R8)       
 * [Different Levels of AWS Resources for Machine Learning Model Training and Deployment](https://gist.github.com/nov05/6f39c83c143d91175075fb8e7e871d0c)    
 * [Tutorial:](https://docs.google.com/document/d/17KzWVf84xQJVNH1jd6yh_FLgr781QcdKng1JIF6P5X4) Create custom docker image for SageMaker data processing jobs, create AWS ECR private repo, and upload the image to the repo   
