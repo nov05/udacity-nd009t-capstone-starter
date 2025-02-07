@@ -20,6 +20,7 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 
 - **Technical tips:**  
   * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.broadcast()` to notify all nodes to stop. Then, use `dist.barrier()` to synchronize all processes before halting the training. Otherwise, errors like `AllGather` errors may be triggered, and processes could hang until timeout if nodes are not properly synchronized.
+  * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
 
 
 <br><br><br>  

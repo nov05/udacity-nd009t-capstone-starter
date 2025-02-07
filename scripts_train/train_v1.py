@@ -24,7 +24,6 @@ from smdistributed.dataparallel.torch.parallel.distributed import DistributedDat
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
 ## Enables cuDNN's auto-tuner to find the best algorithm for the hardware
 torch.backends.cudnn.benchmark = True
-braodcast_early_stop = False
 
 
 ## For WebDataset
@@ -262,6 +261,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     '''
     Train, eval, test, and save the model
     '''
+    braodcast_early_stop = torch.tensor(0, dtype=torch.int32)
     task.step_counter = StepCounter()
     task.early_stopping = EarlyStopping(task.config.early_stopping_patience)
     task.config.device = (
@@ -336,10 +336,8 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         wds.DataPipeline(
             wds.SimpleShardList(path),
             wds.tarfile_to_samples(),
-            # wds.to_tuple("__key__", "image", "label"),
             wds.to_tuple('image', 'label'),
             wds.map_tuple(
-                # key_transform,
                 val_transform, 
                 label_transform,  
             ),
@@ -366,6 +364,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         ## A resampled dataset is infinite size, but we can recreate a fixed epoch length.
         .with_epoch(num_batches)   
     )
+    ## run Val and test on rank 0 node only
     num_batches = task.config.val_data_size // task.config.batch_size
     task.val_loader = (
         wds.WebLoader(
@@ -432,19 +431,22 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         if dist.get_rank()==0:
             print(f"👉 Train Epoch: {epoch}, "
                   f"Learning Rate: {task.optimizer.param_groups[0]['lr']}")
+            
         train(task)
+
         if dist.get_rank()==0:
             eval(task, phase='val')
             ## check early stopping 
             if task.early_stopping.early_stop:
                 print("⚠️ Early stopping broadcasting...")
                 # broadcast the early stop decision to all nodes
-                braodcast_early_stop = torch.tensor(int(task.early_stopping.early_stop), dtype=torch.int32)
-                dist.broadcast(braodcast_early_stop, src=0)
-        if braodcast_early_stop:
+                braodcast_early_stop = torch.tensor(
+                    int(task.early_stopping.early_stop), dtype=torch.int32)
+                dist.broadcast(braodcast_early_stop, src=0)  ## src is the process rank 
+        if braodcast_early_stop==1.:
             print(f"⚠️ Early stopping at epoch {task.current_epoch} "
                   f"on node {dist.get_rank()}")
-            dist.barrier()  # synchronize all processes before stopping
+            # dist.barrier()  # synchronize all processes before stopping
             break
         ## adjust optimizer learning rate
         if task.config.opt_type=='adamw':
@@ -456,7 +458,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                 task.current_epoch+1
             )
         ## ensure all nodes sync at the end of the epoch
-        dist.barrier()
+        # dist.barrier()
 
     ## TODO: Test the model to see its accuracy
     if dist.get_rank()==0:
