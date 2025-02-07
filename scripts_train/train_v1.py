@@ -1,3 +1,8 @@
+## Created by nov05 on 2025-02-07
+## 1. This script sets up distributed training using AWS SageMaker's Distributed Data Parallel (DDP) framework
+##    and integrates with WebDataset for efficient data streaming. 
+## 2. We are also logging experiment metrics and configurations using Weights & Biases (wandb).
+## 3. Early stopping is implemented.
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,12 +19,15 @@ from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 
 import webdataset as wds
-from torch.utils.data import DataLoader, IterableDataset
 import smdistributed.dataparallel.torch.distributed as dist
 from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
+## Enables cuDNN's auto-tuner to find the best algorithm for the hardware
+torch.backends.cudnn.benchmark = True
+braodcast_early_stop = False
 
 
+## For WebDataset
 def get_shard_number(path):
     ## e.g. "train/train-shard-{000000..000001}.tar", 2 shards
     start, _, end = path.split('{')[-1].split('}')[0].split('.')
@@ -28,16 +36,19 @@ def get_shard_number(path):
     else:
         return int(end)-int(start)+1
 
+## For WebDataset
 class image_transform:
     def __call__(self, x):
         return Image.open(io.BytesIO(x))
-    
+
+## For WebDataset    
 train_transform = transforms.Compose([
     image_transform(),
     transforms.RandomResizedCrop(224),
     transforms.ToTensor(),
 ])  
 
+## For WebDataset
 def label_transform(x):
     ## Original lables are (1,2,3,4,5)
     ## Convert to (0,1,2,3,4)
@@ -53,6 +64,7 @@ def average_gradients(model):
             async_op=False)
         param.data /= float(dist.get_world_size())
 
+## For argparse
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -62,7 +74,8 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('⚠️ Boolean value expected')
-    
+
+## For argparse    
 def str2dict(s):
     if not s:
         return {}
@@ -113,6 +126,17 @@ class EarlyStopping:
         else:
             self.best_loss = val_loss
             self.counter = 0
+
+## Custom learning rate step
+def adjust_learning_rate(current_lr, lr_sched_step_size, epoch):
+    """
+    Sets the learning rate to the initial LR 
+    decayed by 1/10 every lr_sched_step_size epochs
+    """
+    lr = current_lr * (0.1 ** (epoch//lr_sched_step_size))
+    for param_group in task.optimizer.param_groups:
+        param_group['lr'] = lr
+    return lr
 
 def train(task):
     '''
@@ -379,15 +403,23 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     if task.config.debug and task.hook is not None:
         task.hook.register_loss(task.train_criterion)
         task.hook.register_loss(task.val_criterion)
-    task.optimizer = optim.AdamW(
-        task.model.parameters(), 
-        lr=task.config.opt_learning_rate * dist.get_world_size(),  ## SMDDP
-        weight_decay=task.config.opt_weight_decay,
-    )  
-    task.scheduler = optim.lr_scheduler.StepLR(
-        task.optimizer, 
-        step_size=task.config.lr_sched_step_size, 
-        gamma=task.config.lr_sched_gamma)  # Reduce LR every 6 epochs by 0.5
+    if task.config.opt_type=='adamw':
+        task.optimizer = optim.AdamW(
+            task.model.parameters(), 
+            lr=task.config.opt_learning_rate * dist.get_world_size(),  ## SMDDP
+            weight_decay=task.config.opt_weight_decay,
+        )  
+        task.scheduler = optim.lr_scheduler.StepLR(
+            task.optimizer, 
+            step_size=task.config.lr_sched_step_size, 
+            gamma=task.config.lr_sched_gamma)  # Reduce LR every 6 epochs by 0.5
+    elif task.config.opt_type=='sgd':
+        task.optimizer = torch.optim.SGD(
+            task.model.parameters(), 
+            lr=task.config.opt_learning_rate * dist.get_world_size(),  ## SMDDP
+            momentum=task.config.opt_momentum,
+            weight_decay=task.config.opt_weight_decay
+        )
     '''
     TODO: Call the train function to start training your model
           Remember that you will need to set up a way to get training data from S3
@@ -403,10 +435,28 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         train(task)
         if dist.get_rank()==0:
             eval(task, phase='val')
+            ## check early stopping 
             if task.early_stopping.early_stop:
-                print("⚠️ Early stopping")
-                break
-        task.scheduler.step()  ## Update learning rate after every epoch
+                print("⚠️ Early stopping broadcasting...")
+                # broadcast the early stop decision to all nodes
+                braodcast_early_stop = torch.tensor(int(task.early_stopping.early_stop), dtype=torch.int32)
+                dist.broadcast(braodcast_early_stop, src=0)
+        if braodcast_early_stop:
+            print(f"⚠️ Early stopping at epoch {task.current_epoch} "
+                  f"on node {dist.get_rank()}")
+            dist.barrier()  # synchronize all processes before stopping
+            break
+        ## adjust optimizer learning rate
+        if task.config.opt_type=='adamw':
+            task.scheduler.step()  ## Update learning rate after every epoch
+        elif task.config.opt_type=='sgd':
+            adjust_learning_rate(
+                task.config.opt_learning_rate, 
+                task.config.lr_sched_step_size,
+                task.current_epoch+1
+            )
+        ## ensure all nodes sync at the end of the epoch
+        dist.barrier()
 
     ## TODO: Test the model to see its accuracy
     if dist.get_rank()==0:
@@ -434,8 +484,10 @@ if __name__=='__main__':
     ## Hyperparameters passed by the SageMaker estimator
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--opt-type', type=str, default='AdamW')
     parser.add_argument('--opt-learning-rate', type=float, default=1e-4)
-    parser.add_argument('--opt-weight-decay', type=float, default=1e-4)  
+    parser.add_argument('--opt-weight-decay', type=float, default=1e-4) 
+    parser.add_argument('--opt-momentum', type=float, default=0.9) 
     parser.add_argument('--lr-sched-step-size', type=int, default=6)  
     parser.add_argument('--lr-sched-gamma', type=float, default=0.5)  
     parser.add_argument('--early-stopping-patience', type=int, default=100)  
@@ -487,8 +539,6 @@ if __name__=='__main__':
     # ====================================#
     if task.config.debug:
         import smdebug.pytorch as smd
-    ## Enables cuDNN's auto-tuner to find the best algorithm for the hardware
-    torch.backends.cudnn.benchmark = True
 
     main(task)
 

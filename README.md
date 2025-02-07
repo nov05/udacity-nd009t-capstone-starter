@@ -18,6 +18,9 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 All these techniques can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with debugging and profiling), and **inference**. While **monitoring** was not implemented in this project, it has been demonstrated in previous hands-on exercises.
 
+- **Technical tips:**  
+  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.broadcast()` to notify all nodes to stop. Then, use `dist.barrier()` to synchronize all processes before halting the training. Otherwise, errors like `AllGather` errors may be triggered, and processes could hang until timeout if nodes are not properly synchronized.
+
 
 <br><br><br>  
 
@@ -25,8 +28,11 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 
 # 👉 **Project Submission**
 
+### 🏷️ **Environment and Services**
+
 * [Local conda env](https://gist.github.com/nov05/a6eccfd88ef180d5cae0d0d0e2fc646d?permalink_comment_id=5425643#gistcomment-5425643)  
 * Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR, Wandb, Docker
+
 
 ### 🏷️ **Metadata Exploratory Data Analysis (EDA)**
 
