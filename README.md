@@ -4,9 +4,20 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### 🏷️ **Technical highlights:** 
 
-* For demo purpose, 10,441 data with 5 classes are retrieved from the original 500,000 dataset.  
-* **AWS Athena CTAS and query** are used to do the expoloratory data analysis (EDA).  
-* **AWS SageMaker ScriptProcessor** and a **custom Docker image** are used to convert the 10K-dataset to **WebDataset** .tar files.
+- For demonstration purposes, a subset of **10,441 samples** with **5 classes** was selected from the original dataset of over **500,000+ entries**.
+  
+- **Exploratory Data Analysis (EDA)** was performed using **AWS Athena** CTAS and **Trino SQL** queries on the 10K metadata JSON files. The **10,441 JSON files** were efficiently consolidated into **21 SNAPPY-compressed Parquet files** in just **3.6 seconds**.
+  
+- **AWS Glue-Spark** jobs were developed locally using **Docker** and **VS Code** for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
+  
+- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a **custom Docker image**. The **10K dataset** was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
+
+- **WebDataset** is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.
+
+- **AWS SageMaker Distributed Data Parallel (SMDDP)** framework is combined with **WebDataset** for distributed training. SMDDP efficiently manages tasks such as model replication across GPU nodes, asynchronous training, and synchronization of model weights across nodes. Meanwhile, **WebDataset** handles the shuffling, transforming, node-wise data splitting, and batching of training data, ensuring seamless data distribution for each node during training.  
+
+All these techniques can be easily applied to large-scale datasets, including terabyte-sized training data, ensuring efficient processing and scalability without overwhelming infrastructure resources.  
+
 
 <br><br><br>  
 
@@ -15,6 +26,7 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 # 👉 **Project Submission**
 
 * [Local conda env](https://gist.github.com/nov05/a6eccfd88ef180d5cae0d0d0e2fc646d?permalink_comment_id=5425643#gistcomment-5425643)  
+* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR
 
 ### 🏷️ **Metadata Exploratory Data Analysis (EDA)**
 
