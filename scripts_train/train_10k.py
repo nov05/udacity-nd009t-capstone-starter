@@ -322,21 +322,12 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             wds.batched(task.config.batch_size),
         ) 
     )
- 
     classes = np.unique(list(task.config.class_weights_dict.keys()))   ## It has to be sorted.
     task.config.num_classes = len(classes)  ## get number of total classes for net creation
     class_weights = [task.config.class_weights_dict[k] for k in classes]
     class_weights = torch.tensor(
         class_weights, 
         dtype=torch.float32).to(task.config.device)
-    
-    # ## SMDDP: set num_replicas and rank in Torch DistributedSampler
-    # train_sampler = DistributedSampler(  ## ⚠️ doesn't work with WebDataset
-    #     train_dataset,
-    #     num_replicas=dist.get_world_size(),
-    #     rank=dist.get_rank(),
-    #     shuffle=False,
-    # )
     
     ## WebDataset dataloader
     num_batches = task.config.train_data_size // (task.config.batch_size * dist.get_world_size())
