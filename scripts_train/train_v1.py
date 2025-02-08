@@ -239,7 +239,7 @@ def create_net(task):
         task.config.num_classes)  # Adjust for the number of classes
     torch.nn.init.kaiming_normal_(task.model.fc.weight)  # Initialize new layers
     task.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(task.model)  ## PyTorch DDP
-    ## Wrap model with smdistributed.dataparallel's DistributedDataParallel
+    ## Wrap model with SMDDP
     task.model = DDP(task.model.to(task.config.device), 
                      device_ids=[torch.cuda.current_device()])  ## single-device Torch module 
     print(f"👉 Rank {dist.get_rank()}: "
@@ -261,18 +261,6 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     '''
     Train, eval, test, and save the model
     '''
-    braodcast_early_stop = torch.tensor(0, dtype=torch.int32)
-    task.step_counter = StepCounter()
-    task.early_stopping = EarlyStopping(task.config.early_stopping_patience)
-    task.config.device = (
-        torch.device("cuda" if torch.cuda.is_available() else "cpu") 
-        if task.config.use_cuda else "cpu"
-    )
-    print(f"👉 Device: {task.config.device}, "
-          f"Rank: {dist.get_rank()}, "  ## SMDDP
-          f"Local rank: {dist.get_local_rank()}")  ## SMDDP
-    task.config.num_cpu = os.cpu_count()  ## for data loaders
-
     train_transform = transforms.Compose([
         image_transform(),
         transforms.RandomHorizontalFlip(),
@@ -426,6 +414,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ===========================================================#
     # 5. Pass the SMDebug hook to the train and test functions.  #
     # ===========================================================#
+    # braodcast_early_stop = torch.tensor(0, dtype=torch.int32).to(task.config.device)
     for epoch in range(task.config.epochs):
         task.current_epoch = epoch
         if dist.get_rank()==0:
@@ -436,29 +425,27 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
 
         if dist.get_rank()==0:
             eval(task, phase='val')
-            ## check early stopping 
-            if task.early_stopping.early_stop:
-                print("⚠️ Early stopping broadcasting...")
-                # broadcast the early stop decision to all nodes
-                braodcast_early_stop = torch.tensor(
-                    int(task.early_stopping.early_stop), dtype=torch.int32)
-                dist.broadcast(braodcast_early_stop, src=0)  ## src is the process rank 
-        if braodcast_early_stop==1.:
-            print(f"⚠️ Early stopping at epoch {task.current_epoch} "
-                  f"on node {dist.get_rank()}")
-            # dist.barrier()  # synchronize all processes before stopping
-            break
-        ## adjust optimizer learning rate
-        if task.config.opt_type=='adamw':
-            task.scheduler.step()  ## Update learning rate after every epoch
-        elif task.config.opt_type=='sgd':
-            adjust_learning_rate(
-                task.config.opt_learning_rate, 
-                task.config.lr_sched_step_size,
-                task.current_epoch+1
-            )
-        ## ensure all nodes sync at the end of the epoch
-        # dist.barrier()
+            # if task.early_stopping.early_stop: 
+            #     ## broadcast the early stop decision to all nodes
+            #     braodcast_early_stop = torch.tensor(1, 
+            #         dtype=torch.int32).to(task.config.device)
+            #     dist.broadcast(braodcast_early_stop, src=0)  ## one to all, src is the process rank
+            #     print(f"⚠️ Early stopping broadcasting "
+            #         f"{braodcast_early_stop.item()} from Rank {dist.get_rank()}...")
+                # dist.all_reduce(braodcast_early_stop, op=dist.ReduceOp.MAX)  ## all to all
+            ## adjust optimizer learning rate
+            if task.config.opt_type=='adamw':
+                task.scheduler.step()  
+            elif task.config.opt_type=='sgd':
+                adjust_learning_rate(
+                    task.config.opt_learning_rate, 
+                    task.config.lr_sched_step_size,
+                    task.current_epoch+1
+                )
+        # if braodcast_early_stop.item()!=0:
+        #     print(f"⚠️ Early stopping at epoch {task.current_epoch} "
+        #         f"on node {dist.get_rank()}")
+        #     break
 
     ## TODO: Test the model to see its accuracy
     if dist.get_rank()==0:
@@ -467,6 +454,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
 
     ## TODO: Save the trained model
     if dist.get_rank()==0:  ## DDP only save one model
+        print("🟢 Start saving the trained model...")
         save(task)
 
 
@@ -520,6 +508,17 @@ if __name__=='__main__':
     for key, value in vars(args).items():  
         ## Store arguments in the config object
         setattr(task.config, key, value)
+
+    task.step_counter = StepCounter()
+    task.early_stopping = EarlyStopping(task.config.early_stopping_patience)
+    task.config.device = (
+        torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+        if task.config.use_cuda else "cpu"
+    )
+    print(f"👉 Device: {task.config.device}, "
+          f"Rank: {dist.get_rank()}, "  ## SMDDP
+          f"Local rank: {dist.get_local_rank()}")  ## SMDDP
+    task.config.num_cpu = os.cpu_count()  ## for data loaders
     ## Get shard numbers
     task.config.train_shards = get_shard_number(task.config.train_data_path)
     task.config.val_shards = get_shard_number(task.config.val_data_path)

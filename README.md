@@ -19,8 +19,12 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 All these techniques can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with debugging and profiling), and **inference**. While **monitoring** was not implemented in this project, it has been demonstrated in previous hands-on exercises.
 
 - **Technical tips:**  
-  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.broadcast()` to notify all nodes to stop. Then, use `dist.barrier()` to synchronize all processes before halting the training. Otherwise, errors like `AllGather` errors may be triggered, and processes could hang until timeout if nodes are not properly synchronized.
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
+
+- **Open issues:**
+  * Expected behavior: To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.broadcast()` to notify all nodes to stop. Then, use `dist.barrier()` to synchronize all processes before halting the training. Otherwise, errors like `AllGather` errors may be triggered, and processes could hang until timeout if nodes are not properly synchronized.  
+    GitHub Issues: [How to Implement Early Stopping with WebDataset in SageMaker Distributed Data Parallel (SMDDP) Framework? #446
+Open](https://github.com/webdataset/webdataset/issues/446)  
 
 
 <br><br><br>  
