@@ -22,7 +22,6 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 import webdataset as wds
 import smdistributed.dataparallel.torch.distributed as dist
 from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
-dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
 dist.init_process_group(
     backend="smddp", ## SageMaker DDP, replacing "nccl"
     timeout=timedelta(minutes=5),  ## default 20 minutes?

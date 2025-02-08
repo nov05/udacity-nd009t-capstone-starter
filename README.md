@@ -37,7 +37,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 ### 🏷️ **Environment and Services**
 
 * [Local conda env](https://gist.github.com/nov05/a6eccfd88ef180d5cae0d0d0e2fc646d?permalink_comment_id=5425643#gistcomment-5425643)  
-* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR / IAM, Wandb, Docker
+* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR / IAM / CloudWatch, Wandb, Docker
 * Folder structure:
   ```
     /starter
@@ -86,18 +86,140 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 ### 🏷️ **Data Preparation**  
 
+* Shuffle the dataset, then split it into train, validation, and test sets. Use WebDataset to convert pairs of `.jpg` and `.json` files into `.tar` files, where each file contains a shard with (\_\_key\_\_, jpg, class) data — e.g., a shard size of 1,000 samples. Ultimately, the 10,441 samples are saved as 7, 2, and 2 `.tar` files for the train, validation, and test sets, respectively, and stored in an S3 bucket with the prefix `s3://p5-amazon-bin-images/webdataset/train/`, `~/val/` and `~/test/`.
 
+  * ✅ Check [the docker file](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_process/dockerfile) to build the custom image for **SageMaker Processor**  
+
+  * ✅✅ Check [the processing notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/ETL.ipynb) and [script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_process/convert_to_webdataset_10k.py)  
+
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_12_08-p5-amazon-bin-images%20-%20S3%20bucket%20_%20S3%20_%20us-east-1.jpg" width=800>  
+
+* During training, we can stream the data from S3 to the training instances by passing the dataset paths as hyperparameters. In the training script, we use **WebDataset** `DataPipeline` and `WebLoader` to stream, buffle, shuffle, split by node (GPUs), transform, batch the data.
+
+  ```python
+  data_base_path = "s3://p5-amazon-bin-images/webdataset/"
+  train_data_path = data_base_path + "train/train-shard-{000000..000007}.tar"
+  ```
+  ```python
+  path = f"pipe:aws s3 cp {task.config.train_data_path} -"
+  train_dataset = (
+      wds.DataPipeline(
+      wds.SimpleShardList(path),
+      # at this point we have an iterator over all the shards
+      wds.shuffle(1000),
+      wds.split_by_node,
+        # at this point, we have an iterator over the shards assigned to each worker
+        wds.tarfile_to_samples(),
+        # this shuffles the samples in memory
+        wds.shuffle(1000),
+        # this decodes image and json
+        wds.to_tuple('image', 'label'),
+        wds.map_tuple(
+            train_transform, 
+            label_transform,  
+        ),
+        wds.shuffle(1000),
+        wds.batched(task.config.batch_size),
+      )
+  ) 
+  num_batches = task.config.train_data_size // (task.config.batch_size * dist.get_world_size())
+  task.train_loader = (
+      wds.WebLoader(
+          train_dataset, 
+          batch_size=None, 
+          num_workers=task.config.num_cpu,
+      ).unbatched()
+      .shuffle(1000)
+      .batched(task.config.batch_size)
+      ## A resampled dataset is infinite size, but we can recreate a fixed epoch length.
+      .with_epoch(num_batches)   
+  )
+  ```
 
 ### 🏷️ **Distributed Training and Hyperparameters Tuning (HPO)**  
 
 * Use SageMaker Distributed Data Parallel (SMDDP) framework for distributed training  
-  * Check [the SageMaker notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/01_sagemaker_10k_adamw.ipynb) and [the training script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_train/train_v1.py)   
+
+  * ✅✅✅ Check [the SageMaker notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/01_sagemaker_10k_adamw.ipynb) and [the training script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_train/train_v1.py)   
+
+    * Beginning of the script
+    ```python
+    import smdistributed.dataparallel.torch.distributed as dist
+    from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
+    dist.init_process_group(
+        backend="smddp", ## SageMaker DDP, replacing "nccl"
+        timeout=timedelta(minutes=5),  ## default 20 minutes?
+    )  
+    ```
+
+    * When creating the neural network  
+    ```python
+    def create_net(task):
+        ...
+        task.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(task.model)  ## PyTorch DDP
+        ## Wrap model with SMDDP
+        task.model = DDP(task.model.to(task.config.device), 
+                        device_ids=[torch.cuda.current_device()])  ## single-device Torch module 
+    ```
+
+    * In the main function  
+    ```python
+    create_net(task)
+    ## SMDDP: Pin each GPU to a single distributed data parallel library process.
+    torch.cuda.set_device(dist.get_local_rank())
+    task.model.cuda(dist.get_local_rank())
+    ```
+
+    * Test and save model on one node only
+    ```python
+    if dist.get_rank()==0:
+        print("🟢 Start testing...")
+        eval(task, phase='test')
+        print("🟢 Start saving the trained model...")
+        save(task)
+    ```
+
 * Use WebDataset to convert and stream datasets to the training instances from S3   
+
 * Use 2 `ml.g4dn.xlarge` GPU instances for training and HPO  
+
   AWS SageMaker HPO Warm Pools improve hyperparameter optimization efficiency, especially in **distributed training**, by reusing instances between jobs, reducing provisioning time, lowering latency, and optimizing resource use. This is particularly valuable for distributed training, where large instance clusters are reused, speeding up experimentation and cutting costs while enabling faster convergence on optimal hyperparameters.
   <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2007_19_39-Amazon%20SageMaker%20AI%20_%20us-east-1.jpg" width=800>  
 
+* Use **wandb** to visulize the training curves. 
 
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_24_28-udacity-awsmle-resnet34-amazon-bin%20Workspace%20%E2%80%93%20Weights%20%26%20Biases.jpg" width=800>  
+
+* Check **AWS CloudWatch** logs
+
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_37_02-Amazon%20SageMaker%20AI%20_%20us-east-1.jpg" width=800>  
+
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2013_15_21-CloudWatch%20_%20us-east-1.jpg" width=800>  
+ 
+  Take note of the MPI logs. According to [the official documentation](https://docs.aws.amazon.com/sagemaker/latest/dg/data-parallel-config.html), the SageMaker Distributed Data Parallel library uses the **Message Passing Interface (MPI)**, a widely used standard for communication between nodes in high-performance clusters, along with NVIDIA’s **NCCL library** for GPU-level communication.
+
+  * In the training notebook:  
+    ```python
+    from sagemaker.pytorch import PyTorch
+    estimator = PyTorch(
+        ...
+        distribution={"smdistributed": {"dataparallel": { "enabled": True}}},
+    )
+    ```
+
+* Find the best hyperparameter job from HPO. You can deploy from the job name, or from the model S3 URI. 
+
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_34_35-01_sagemaker_10k_adamw.ipynb%20-%20udacity-nd189-aws-mle-nanodegree%20(Workspace)%20-%20Vi.jpg" width=600>
+
+  **Note:** 
+
+  1. Model performance and training accuracy are not the focus of this project, as outlined in the project proposal. Instead, the objective is to build a machine learning training pipeline for handling relatively large datasets in AWS.
+
+  2. Since I focused primarily on **mocking big data ETL** and **distributed training** in this project, and have already gained experience with debugging and profiling (as well as wandb sweeping, deployment, inference, etc.) in previous projects, I'll be skipping those steps here. (Check [the notebooks from P3 dog breed image classification](https://github.com/nov05/udacity-CD0387-deep-learning-topics-within-computer-vision-nlp-project-starter?tab=readme-ov-file).)  
+
+  3. That said, I’d like to mention the training results using 10K out of 500K samples. The best accuracy achieved was **around 36%**, compared to 55.67% achieved by others using the full 500K dataset. My speculation is that this is likely close to the best possible result from such a small dataset (1/50th of the original). Given that this is a demo project with limited resources, I’ll leave the results as they are.
+
+  4. Please refer to the source code notebooks, scripts, and project notes for much more technical details. Here, I’m only providing a high-level overview of the work, as including everything would make the `README.md` too lengthy. Lol.
 
 
 
@@ -109,7 +231,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 * [Different Levels of AWS Resources for Machine Learning Model Training and Deployment](https://gist.github.com/nov05/6f39c83c143d91175075fb8e7e871d0c)    
 * [Tutorial:](https://docs.google.com/document/d/17KzWVf84xQJVNH1jd6yh_FLgr781QcdKng1JIF6P5X4) Create custom docker image for SageMaker data processing jobs, create AWS ECR private repo, and upload the image to the repo   
 
-[All other notes for the nanodegree](https://drive.google.com/drive/folders/1-BRvqMlMbk1E6kV6BALTLhXRyqJMWPNE)  
+✅ [All other notes for the nanodegree](https://drive.google.com/drive/folders/1-BRvqMlMbk1E6kV6BALTLhXRyqJMWPNE) on Google Drive  
 
 <br><br><br>
 
