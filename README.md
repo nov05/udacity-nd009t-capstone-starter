@@ -1,4 +1,4 @@
-# 🟢 **Capstone Project**  
+# 🟢 **Capstone Project: Teratype-Scale Machine Learning with AWS**    
 **Udacity AWS Machine Learning Engineer Nanodegree (ND189)**   
 Amazon Bin Object Counting, a demonstration of end-to-end machine learning engineering skills on AWS  
 
@@ -14,7 +14,11 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
   
 - To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The **10K dataset** was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
 
-- **WebDataset** is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.
+- **WebDataset** (a subclass of PyTorch IterableDataset) is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.  
+
+  * `FastFile` input mode streams data in real-time and is cost-effective. However, when streaming smaller files directly from Amazon S3, the overhead of dispatching a new GET request for each file becomes significant relative to the file transfer time (even with a highly parallel data loader and prefetch buffer). This results in lower overall throughput for `FastFile Mode`, causing an I/O bottleneck during training.
+
+  * In reality, the **Amazon Bin Image Dataset** consists of 50K sample file pairs, with a total size of around 60GB—falling comfortably within the 50-100GB range—so we can use `File Mode`. However, for the purpose of this project, we are simulating tens of terabytes of data.   
 
 - **AWS SageMaker Distributed Data Parallel (SMDDP)** framework is combined with **WebDataset** for distributed training. SMDDP efficiently manages tasks such as model replication across GPU nodes, asynchronous training, and synchronization of model weights across nodes. Meanwhile, **WebDataset** handles the shuffling, transforming, node-wise data splitting, and batching of training data, ensuring seamless data distribution for each node during training.  
 
@@ -92,6 +96,28 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
   * ✅✅ Check [the processing notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/ETL.ipynb) and [script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_process/convert_to_webdataset_10k.py)  
 
+    * In the processing script  
+      ```python
+      def convert_dataset(type_prefix,  ## e.g. "train/"
+                          file_list, 
+                          maxcount=1000):  ## number of items per shard
+          shard_prefix = type_prefix[:-1] + "-shard-"  ## e.g. file name: "train-shard-000000.tar"
+          with wds.ShardWriter(f"{shard_prefix}%06d.tar", maxcount=maxcount) as sink:
+              for image_id,label in file_list:
+                  image_key = f'{input_prefix_images}{image_id}.jpg'
+                  try:  # Ensure the corresponding JSON file exists
+                      image_data = read_s3_file(input_bucket, image_key)
+                  except Exception as e:
+                      print(f"⚠️ Skipping image '{image_key}' due to error: {e}")
+                      continue
+                  # Save as WebDataset sample
+                  sink.write({
+                      "__key__": f"{image_id}",
+                      "image": image_data,
+                      "label": label,
+                  })
+      ```
+
   <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_12_08-p5-amazon-bin-images%20-%20S3%20bucket%20_%20S3%20_%20us-east-1.jpg" width=800>  
 
 * During training, we can stream the data from S3 to the training instances by passing the dataset paths as hyperparameters. In the training script, we use **WebDataset** `DataPipeline` and `WebLoader` to stream, buffle, shuffle, split by node (GPUs), transform, batch the data.
@@ -138,7 +164,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 ### 🏷️ **Distributed Training and Hyperparameters Tuning (HPO)**  
 
-* Use SageMaker Distributed Data Parallel (SMDDP) framework for distributed training  
+* Use **SageMaker Distributed Data Parallel (SMDDP)** framework for distributed training  
 
   * ✅✅✅ Check [the SageMaker notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/01_sagemaker_10k_adamw.ipynb) and [the training script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_train/train_v1.py)   
 
