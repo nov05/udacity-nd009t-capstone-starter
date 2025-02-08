@@ -20,7 +20,10 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 
 - **Technical tips:**  
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
-  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.SUM)` to notify all nodes to stop.
+  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.SUM)` to notify all nodes to stop.  
+  * To address **class imbalance** in large streamed training datasets, we can leverage big data analytics tools during pre-processing to calculate class weights, which can then be passed to the training instance as a hyperparameter. 
+  * **Wandb** (Weights and Biases) is used for experiment tracking and visualizing machine learning training runs, which allows us to log training information, such as loss, accuracy, and other metrics, as well as visualize training curves in real-time.
+  * Check the pricing and **AWS Service Quotas** at the account level when selecting SageMaker EC2 instances. By default, there is no quota for GPU **spot instances** available.
      
 
 
@@ -47,10 +50,14 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
  
 * From the target (expected quantity) distribution plot, we can see that there is class imbalance. Additionally, the item quantity distribution plot shows that most items only have one or two images.  
 
+### 🏷️ **Training with SageMaker Distributed Data Parallel and WebDataset data streaming**  
+
+
+
+
 ### 🏷️ **Notes**
 
-* GitHub Issues (closed): [How to Implement Early Stopping with WebDataset in SageMaker Distributed Data Parallel (SMDDP) Framework? #446
-Open](https://github.com/webdataset/webdataset/issues/446)  
+* GitHub Issues (closed): [How to Implement Early Stopping with WebDataset in SageMaker Distributed Data Parallel (SMDDP) Framework? #446](https://github.com/webdataset/webdataset/issues/446)  
 * [SageMaker input mode and WebDataset](https://docs.google.com/document/d/1SNQuYrCOy6s5Zg3NXdkrujOyDPP1VA4b8HKAqEoJvM4)   
 * [SageMaker PyTorch distributed training](https://docs.google.com/document/d/12yN589I95IdyJjOwoxH5uQf08bfCvnXvIYRYChFw8R8)       
 * [Different Levels of AWS Resources for Machine Learning Model Training and Deployment](https://gist.github.com/nov05/6f39c83c143d91175075fb8e7e871d0c)    

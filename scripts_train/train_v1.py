@@ -1,6 +1,6 @@
 ## Created by nov05 on 2025-02-07
 ## 1. This script sets up distributed training using AWS SageMaker's Distributed Data Parallel (DDP) framework
-##    and integrates with WebDataset for efficient data streaming. 
+##    and integrates with WebDataset for efficient data streaming from S3. 
 ## 2. We are also logging experiment metrics and configurations using Weights & Biases (wandb).
 ## 3. Early stopping is implemented.
 import numpy as np
@@ -11,6 +11,7 @@ import torchvision
 from torchvision import transforms
 import os, io
 from pprint import pprint
+from datetime import timedelta
 import argparse
 import wandb
 
@@ -22,6 +23,10 @@ import webdataset as wds
 import smdistributed.dataparallel.torch.distributed as dist
 from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
+dist.init_process_group(
+    backend="smddp", ## SageMaker DDP, replacing "nccl"
+    timeout=timedelta(minutes=5),
+)  
 ## Enables cuDNN's auto-tuner to find the best algorithm for the hardware
 torch.backends.cudnn.benchmark = True
 
@@ -194,29 +199,29 @@ def eval(task, phase='val'):
     if task.config.debug and task.hook: 
         task.hook.set_mode(smd.modes.EVAL)
     task.model.eval()
-    test_loss = 0.
+    eval_loss_epoch = 0.
     correct = 0.
     num_samples = 0.
-    data_loader = task.val_loader if phase=='eval' else task.test_loader
+    data_loader = task.val_loader if phase=='val' else task.test_loader
     with torch.no_grad():
         for data, target in data_loader:  ## PyTorch loader & WebDataset loader
             num_samples += len(target)
             data, target = data.to(task.config.device), target.to(task.config.device)
             output = task.model(data)
-            test_loss += task.val_criterion(output, target).item()  # sum up batch loss
+            eval_loss_epoch += task.val_criterion(output, target).item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
-    test_loss /= num_samples # len(data_loader.dataset) 
+    eval_loss_epoch /= num_samples 
     if phase=='val': 
-        task.early_stopping(test_loss)
+        task.early_stopping(eval_loss_epoch)
         if task.config.wandb:
-            wandb.log({f"{phase}_loss_epoch": test_loss}, 
+            wandb.log({f"{phase}_loss_epoch": eval_loss_epoch}, 
                       step=task.step_counter.total_steps)
-    accuracy = 100.*correct/num_samples # len(data_loader.dataset)
+    accuracy = 100.*correct/num_samples 
     print(
-        "\n👉 {}: Average loss: {:.4f}, Accuracy: {:.0f}/{:.0f} ({:.2f}%)\n".format(
+        "👉 {}: Average loss: {:.4f}, Accuracy: {:.0f}/{:.0f} ({:.2f}%)\n".format(
             phase.upper(),
-            test_loss, 
+            eval_loss_epoch, 
             correct, 
             num_samples, ## val/test data size
             accuracy
@@ -295,8 +300,10 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             # this shuffles the samples in memory
             wds.shuffle(1000),
             # this decodes image and json
+            # wds.to_tuple("__key__", "image", "label"),
             wds.to_tuple('image', 'label'),
             wds.map_tuple(
+                # key_transform,
                 train_transform, 
                 label_transform,  
             ),
@@ -309,10 +316,8 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         wds.DataPipeline(
             wds.SimpleShardList(path),
             wds.tarfile_to_samples(),
-            # wds.to_tuple("__key__", "image", "label"),
             wds.to_tuple('image', 'label'), 
             wds.map_tuple(
-                # key_transform,
                 val_transform, 
                 label_transform,  
             ),
@@ -332,12 +337,6 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             wds.batched(task.config.batch_size),
         ) 
     )
-    classes = np.unique(list(task.config.class_weights_dict.keys()))   ## It has to be sorted.
-    task.config.num_classes = len(classes)  ## get number of total classes for net creation
-    class_weights = [task.config.class_weights_dict[k] for k in classes]
-    class_weights = torch.tensor(
-        class_weights, 
-        dtype=torch.float32).to(task.config.device)
     
     ## WebDataset dataloader
     num_batches = task.config.train_data_size // (task.config.batch_size * dist.get_world_size())
@@ -371,7 +370,19 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         )
         .with_epoch(num_batches) 
     )
-    
+
+    ## pre-calculated class weights for streamed data
+    if ((task.config.class_weights_dict is None) or (task.config.class_weights_dict=={}) 
+        or (task.config.class_weights_dict=='')):
+        class_weights = None
+    else:
+        classes = np.unique(list(task.config.class_weights_dict.keys())) ## It has to be sorted to match the output
+        task.config.num_classes = len(classes)  ## get number of total classes for net creation
+        class_weights = [task.config.class_weights_dict[k] for k in classes]
+        class_weights = torch.tensor(
+            class_weights, 
+            dtype=torch.float32).to(task.config.device)
+
     ## TODO: Initialize a model by calling the net function
     create_net(task)
     ## SMDDP: Pin each GPU to a single distributed data parallel library process.
@@ -385,8 +396,10 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         task.hook = smd.Hook.create_from_json_file()
         task.hook.register_hook(task.model)  
     ## TODO: Create your loss and optimizer
-    task.train_criterion = nn.CrossEntropyLoss(weight=class_weights)  # loss per step
-    task.val_criterion = nn.CrossEntropyLoss(weight=class_weights, reduction="sum")  ## loss per epoch
+    task.train_criterion = nn.CrossEntropyLoss(weight=class_weights) # loss per step 
+    task.val_criterion = nn.CrossEntropyLoss(
+        weight=class_weights, 
+        reduction="sum")  ## loss per epoch
     if task.config.debug and task.hook is not None:
         task.hook.register_loss(task.train_criterion)
         task.hook.register_loss(task.val_criterion)
@@ -469,7 +482,7 @@ if __name__=='__main__':
     ## Hyperparameters passed by the SageMaker estimator
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--epochs', type=int, default=20)
-    parser.add_argument('--opt-type', type=str, default='AdamW')
+    parser.add_argument('--opt-type', type=str, default='adamw')
     parser.add_argument('--opt-learning-rate', type=float, default=1e-4)
     parser.add_argument('--opt-weight-decay', type=float, default=1e-4) 
     parser.add_argument('--opt-momentum', type=float, default=0.9) 
@@ -492,7 +505,8 @@ if __name__=='__main__':
     parser.add_argument('--train-data-size', type=int, default=0)
     parser.add_argument('--val-data-size', type=int, default=0)
     parser.add_argument('--test-data-size', type=int, default=0)
-    parser.add_argument('--class-weights-dict', type=str2dict, default='')
+    parser.add_argument('--num-classes', type=int, default=0)
+    parser.add_argument('--class-weights-dict', type=str2dict, default={})
     ## Others
     parser.add_argument('--debug', type=str2bool, default=False)
     parser.add_argument('--wandb', type=str2bool, default=False)
