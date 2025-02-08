@@ -20,10 +20,11 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 
 - **Technical tips:**  
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
-  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.SUM)` to notify all nodes to stop.  
+  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s [`dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.MAX)`](https://pytorch.org/tutorials/intermediate/dist_tuto.html) to notify all nodes to stop.  
   * To address **class imbalance** in large streamed training datasets, we can leverage big data analytics tools during pre-processing to calculate class weights, which can then be passed to the training instance as a hyperparameter. 
   * **Wandb** (Weights and Biases) is used for experiment tracking and visualizing machine learning training runs, which allows us to log training information, such as loss, accuracy, and other metrics, as well as visualize training curves in real-time.
-  * Check the pricing and **AWS Service Quotas** at the account level when selecting SageMaker EC2 instances. By default, there is no quota for GPU **spot instances** available.
+  * Check the pricing and **AWS Service Quotas** at the account level when selecting SageMaker EC2 instances. By default, there is no quota for GPU **spot instances** available.  
+  * You can run **SageMaker** locally using your preferred IDE, which helps you avoid the costs associated with SageMaker Studio. Just configure your AWS config and credentials files on your local machine, ensure that your SageMaker session starts with the correct profile, and retrieve the appropriate execution role.
      
 
 
@@ -50,7 +51,17 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
  
 * From the target (expected quantity) distribution plot, we can see that there is class imbalance. Additionally, the item quantity distribution plot shows that most items only have one or two images.  
 
-### 🏷️ **Training with SageMaker Distributed Data Parallel and WebDataset data streaming**  
+### 🏷️ **Data Preparation**  
+
+
+
+### 🏷️ **Distributed Training and Hyperparameters Tuning (HPO)**  
+
+* Use SageMaker Distributed Data Parallel (SMDDP) framework for distributed training  
+* Use WebDataset to convert and stream datasets to the training instances from S3   
+* Use 2 `ml.g4dn.xlarge` GPU instances for training and HPO  
+* Check the SageMaker notebook
+
 
 
 

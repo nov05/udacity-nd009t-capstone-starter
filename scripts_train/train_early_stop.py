@@ -447,9 +447,9 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             broadcast_early_stop = torch.tensor(1, 
                 dtype=torch.int32).to(task.config.device)
             # dist.broadcast(braodcast_early_stop, src=0)  ## one to all, src is the process rank
-            dist.all_reduce(broadcast_early_stop, op=dist.ReduceOp.SUM)  ## ✅ yep, it works
-            print(f"⚠️ Early stopping aggregating "
-                  f"{broadcast_early_stop.item()} from Rank {dist.get_rank()}...")       
+            dist.all_reduce(broadcast_early_stop, op=dist.ReduceOp.MAX)  ## ✅ yep, SUM works, but SUM could get large
+            print(f"⚠️ Early stopping all-reducing "
+                  f"{broadcast_early_stop.item()} to Rank {dist.get_rank()}...")       
         if broadcast_early_stop.item()!=0:
             print(f"⚠️ Early stopping at epoch {task.current_epoch} "
                   f"on Rank {dist.get_rank()}")

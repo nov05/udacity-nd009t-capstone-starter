@@ -25,7 +25,7 @@ from smdistributed.dataparallel.torch.parallel.distributed import DistributedDat
 dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
 dist.init_process_group(
     backend="smddp", ## SageMaker DDP, replacing "nccl"
-    timeout=timedelta(minutes=5),
+    timeout=timedelta(minutes=5),  ## default 20 minutes?
 )  
 ## Enables cuDNN's auto-tuner to find the best algorithm for the hardware
 torch.backends.cudnn.benchmark = True
@@ -451,9 +451,9 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
             ## Aggregate the early stop decision across all nodes
             tensor_early_stop = torch.tensor(1, 
                 dtype=torch.int32).to(task.config.device)
-            dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.SUM)
-            print(f"⚠️ Early stopping aggregating "
-                    f"{tensor_early_stop.item()} from Rank {dist.get_rank()}...")
+            dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.MAX)  ## SUM could get large
+            print(f"⚠️ Early stopping all-reducing "
+                    f"{tensor_early_stop.item()} to Rank {dist.get_rank()}...")
         if tensor_early_stop.item()!=0:
             print(f"⚠️ Early stopping at epoch {task.current_epoch} "
                   f"on Rank {dist.get_rank()}")
