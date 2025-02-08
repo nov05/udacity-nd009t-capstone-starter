@@ -4,6 +4,8 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 
 ### 🏷️ **Technical highlights:** 
 
+All the techniques listed below can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with tuning, debugging, and profiling), and **inference**. While **monitoring** was not implemented in this project, it has been demonstrated in previous hands-on exercises of this course.
+
 - For demonstration purposes, a subset of **10,441 samples** with **5 classes** was selected from the original dataset of over **500,000+ entries**.
   
 - **Exploratory Data Analysis (EDA)** was performed using **AWS Athena** CTAS and **Trino SQL** queries on the 10K metadata JSON files. The **10,441 JSON files** were efficiently consolidated into **21 SNAPPY-compressed Parquet files** in just **3.6 seconds**.
@@ -15,8 +17,6 @@ Amazon Bin Object Counting, a demonstration of end-to-end machine learning engin
 - **WebDataset** is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.
 
 - **AWS SageMaker Distributed Data Parallel (SMDDP)** framework is combined with **WebDataset** for distributed training. SMDDP efficiently manages tasks such as model replication across GPU nodes, asynchronous training, and synchronization of model weights across nodes. Meanwhile, **WebDataset** handles the shuffling, transforming, node-wise data splitting, and batching of training data, ensuring seamless data distribution for each node during training.  
-
-All these techniques can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with debugging and profiling), and **inference**. While **monitoring** was not implemented in this project, it has been demonstrated in previous hands-on exercises.
 
 - **Technical tips:**  
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
@@ -37,13 +37,46 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 ### 🏷️ **Environment and Services**
 
 * [Local conda env](https://gist.github.com/nov05/a6eccfd88ef180d5cae0d0d0e2fc646d?permalink_comment_id=5425643#gistcomment-5425643)  
-* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR, Wandb, Docker
+* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR / IAM, Wandb, Docker
+* Folder structure:
+  ```
+    /starter
+      ├── # ETL, EDA, training/tuning/deployment/etc. notebooks
+      └── `AWS Athena Trino SQL.md`  # Athena CTAS and queries
+
+    /docker_workspace   # folder attached to the local Glue-Spark Docker container
+      └── `aft-vbi-pds.ipynb`  # PySpark analysis of the metadata
+
+    /scripts_train
+      └── `train_v1.py`  # Major training script for SageMaker Torch estimator
+
+    /scripts_process
+      └── `convert_to_webdataset_10k.py`  # Major preprocessing script for SageMaker Processor
+
+    /docker_process
+      └── `dockerfile`  # To create a custom image for SageMaker Processor
+
+    /scripts_inference
+      └── # deployment scripts
+
+    /examples
+      └── # experiments
+
+    /data   # in the `.gitignore` file
+      └── # local data
+
+    /secrets   # in the `.gitignore` file
+      └── # AWS account numbers, profile names, etc.; wandb secret
+  ```
 
 
 ### 🏷️ **Metadata Exploratory Data Analysis (EDA)**
 
 * Check [the PySpark EDA notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb) on a subset of the metadata (10K out of 500K JSON files from the original dataset)
-  * Demo video: [Query and consolidate a large number of small JSON files with AWS Athena <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/icons/youtube_red_2000x2000.png" width=20>](https://www.youtube.com/watch?v=DMazwtXpF8I)
+
+  * Demo video: [Query and consolidate a large number of small JSON files with AWS Athena <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/icons/youtube_red_2000x2000.png" width=20>](https://www.youtube.com/watch?v=DMazwtXpF8I)  
+    Check the [AWS Athena Trino SQL](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/AWS%20Athena%20Trino%20SQL.md) used here
+
   * Demo video: [Develop local AWS Glue Spark jobs with Docker and VS Code <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/icons/youtube_red_2000x2000.png" width=20>](https://www.youtube.com/watch?v=Kqw_1q9O2NQ)  
     Check [the Text format tutorial](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
 
@@ -58,9 +91,11 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 ### 🏷️ **Distributed Training and Hyperparameters Tuning (HPO)**  
 
 * Use SageMaker Distributed Data Parallel (SMDDP) framework for distributed training  
+  * Check [the SageMaker notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/01_sagemaker_10k_adamw.ipynb) and [the training script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_train/train_v1.py)   
 * Use WebDataset to convert and stream datasets to the training instances from S3   
 * Use 2 `ml.g4dn.xlarge` GPU instances for training and HPO  
-* Check the SageMaker notebook
+  AWS SageMaker HPO Warm Pools improve hyperparameter optimization efficiency, especially in **distributed training**, by reusing instances between jobs, reducing provisioning time, lowering latency, and optimizing resource use. This is particularly valuable for distributed training, where large instance clusters are reused, speeding up experimentation and cutting costs while enabling faster convergence on optimal hyperparameters.
+  <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2007_19_39-Amazon%20SageMaker%20AI%20_%20us-east-1.jpg" width=800>  
 
 
 
