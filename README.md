@@ -1,6 +1,6 @@
 # 🟢 **Capstone Project: Teratype-Scale Machine Learning with AWS**    
 **Udacity AWS Machine Learning Engineer Nanodegree (ND189)**   
-Amazon Bin Object Counting, a demonstration of end-to-end machine learning engineering skills on AWS  
+**P5 Amazon Bin Image Dataset** object counting, a demonstration of end-to-end machine learning engineering skills on AWS  
 
 ### 🏷️ **Technical highlights:** 
 
@@ -21,6 +21,8 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
   * In reality, the **Amazon Bin Image Dataset** consists of 50K sample file pairs, with a total size of around 60GB—falling comfortably within the 50-100GB range—so we can use `File Mode`. However, for the purpose of this project, we are simulating tens of terabytes of data.   
 
 - **AWS SageMaker Distributed Data Parallel (SMDDP)** framework is combined with **WebDataset** for distributed training. SMDDP efficiently manages tasks such as model replication across GPU nodes, asynchronous training, and synchronization of model weights across nodes. Meanwhile, **WebDataset** handles the shuffling, transforming, node-wise data splitting, and batching of training data, ensuring seamless data distribution for each node during training.  
+
+- SageMaker features like debugging, profiling, logging with **CloudWatch**, model deployment, inference, endpoint scaling, and monitoring were demonstrated in previous course projects and hands-on exercises, such as the [**P3 Dog Breed Image Classification**](https://github.com/nov05/udacity-CD0387-deep-learning-topics-within-computer-vision-nlp-project-starter?tab=readme-ov-file#-p3-submission-dog-breed-image-classification-using-aws-sagemaker) project.  
 
 - **Technical tips:**  
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
