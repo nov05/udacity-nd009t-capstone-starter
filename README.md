@@ -253,7 +253,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 ### 🏷️ **Cost Analysis**  
 
-* For this project, due to account limitations, I used my own AWS account for the **Athena** and **ECR** services, which cost around $2. I used the course credits for the rest, with most of the costs coming from **SageMaker** instances. I was experimenting and debugging **SageMaker Distributed Training** with two `ml.g4dn.xlarge` GPU instances ($0.526 per hour each), which amounted to about $16, and the **HPO job** added around $12.
+* For this project, due to account limitations, I used my own AWS account for the **Athena** and **ECR** services, which cost around $2. I used the course credits for the rest, with most of the costs coming from **SageMaker** instances. I was experimenting and debugging **SageMaker Distributed Training** with two `ml.g4dn.xlarge` GPU instances ([$0.526 per hour each](https://aws.amazon.com/ec2/instance-types/g4/)), which amounted to about $16, and the **HPO job** added around $12.
 
   <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2017_12_40-Cost%20Explorer%20_%20Billing%20and%20Cost%20Management%20_%20Global.jpg" width=600>  
 
