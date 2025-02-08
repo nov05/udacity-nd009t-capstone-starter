@@ -10,7 +10,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
   
 - **Exploratory Data Analysis (EDA)** was performed using **AWS Athena** CTAS and **Trino SQL** queries on the 10K metadata JSON files. The **10,441 JSON files** were efficiently consolidated into **21 SNAPPY-compressed Parquet files** in just **3.6 seconds**.
   
-- **AWS Glue-Spark** job scripts were developed locally using **Docker** with AWS Glue Docker images hosted on `Docker Hub` or `Amazon ECR` Public Gallery and **VS Code** for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
+- **AWS Glue-Spark** job scripts were developed locally using **Docker** with AWS Glue Docker images hosted on `Docker Hub` or `Amazon ECR` Public Gallery and **VS Code** (IDE) for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
   
 - To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The **10K dataset** was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
 
