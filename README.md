@@ -434,6 +434,7 @@ Once you have completed the standout suggestions, make sure that you explain wha
 
 ### **Logs**
 
+2025-02-08 project submission  
 2025-01-21 tutorial: How to run local Glue Spark jobs with Docker and VS Code   
 2025-01-17 tutorial: Query and consolidate a large number of small JSON files with AWS Athena  
 2025-01-09 project proposal    
