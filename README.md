@@ -4,7 +4,7 @@
 
 ### 🏷️ **Technical highlights:** 
 
-All the techniques listed below can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with tuning, debugging, and profiling), and **inference**. While **monitoring** was not implemented in this project, it has been demonstrated in previous hands-on exercises of this course.
+All the techniques listed below can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with tuning, debugging, and profiling), **inference**, **monitoring**, and etc.  
 
 - For demonstration purposes, a subset of **10,441 samples** with **5 classes** was selected from the original dataset of over **500,000+ entries**.
   
