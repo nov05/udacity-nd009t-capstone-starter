@@ -259,6 +259,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
   <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2017_22_33-Amazon%20EC2%20G4%20Instances%20%E2%80%94%20Amazon%20Web%20Services%20(AWS).jpg" width=600>
 
+* By default, there is no GPU spot instance quota available at the account level. You need to submit increase requests through **AWS Service Quotas** and wait for AWS approval.
 
 ### 🏷️ **Notes**
 
