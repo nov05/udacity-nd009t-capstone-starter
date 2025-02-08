@@ -216,6 +216,8 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 * Use **wandb** to visulize the training curves. 
 
+    * Check [the wandb workspace for this project](https://wandb.ai/nov05/udacity-awsmle-resnet34-amazon-bin)  
+
   <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_24_28-udacity-awsmle-resnet34-amazon-bin%20Workspace%20%E2%80%93%20Weights%20%26%20Biases.jpg" width=800>  
 
 * Check **AWS CloudWatch** logs
