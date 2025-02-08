@@ -11,6 +11,7 @@ import torchvision
 from torchvision import transforms
 import os, io
 from pprint import pprint
+from datetime import timedelta
 import argparse
 import wandb
 
@@ -21,9 +22,14 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow truncated images
 import webdataset as wds
 import smdistributed.dataparallel.torch.distributed as dist
 from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
-dist.init_process_group(backend="smddp")  ## SageMaker DDP, replacing "nccl"
+dist.init_process_group(
+    backend="smddp", ## SageMaker DDP, replacing "nccl"
+    timeout=timedelta(minutes=2), ## ❌ for test early stopping
+)  
 ## Enables cuDNN's auto-tuner to find the best algorithm for the hardware
 torch.backends.cudnn.benchmark = True
+
+
 
 
 ## For WebDataset
@@ -309,10 +315,8 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         wds.DataPipeline(
             wds.SimpleShardList(path),
             wds.tarfile_to_samples(),
-            # wds.to_tuple("__key__", "image", "label"),
             wds.to_tuple('image', 'label'), 
             wds.map_tuple(
-                # key_transform,
                 val_transform, 
                 label_transform,  
             ),
@@ -345,20 +349,22 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         wds.WebLoader(
             train_dataset, 
             batch_size=None, 
-            num_workers=task.config.num_cpu,
+            # num_workers=task.config.num_cpu,
+            num_workers=0,
         ).unbatched()
         .shuffle(1000)
         .batched(task.config.batch_size)
         ## A resampled dataset is infinite size, but we can recreate a fixed epoch length.
         .with_epoch(num_batches)   
     )
-    ## run Val and test on rank 0 node only
+    ## run Val and test on rank 0 node (GPU) only
     num_batches = task.config.val_data_size // task.config.batch_size
     task.val_loader = (
         wds.WebLoader(
             val_dataset, 
             batch_size=None, 
-            num_workers=task.config.num_cpu,
+            # num_workers=task.config.num_cpu,
+            num_workers = 0,
         )
         .with_epoch(num_batches)  
     )
@@ -367,7 +373,8 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
         wds.WebLoader(
             test_dataset, 
             batch_size=None, 
-            num_workers=task.config.num_cpu,
+            # num_workers=task.config.num_cpu,
+            num_workers=0,
         )
         .with_epoch(num_batches) 
     )
@@ -414,7 +421,7 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
     # ===========================================================#
     # 5. Pass the SMDebug hook to the train and test functions.  #
     # ===========================================================#
-    tensor_early_stop = torch.tensor(0, dtype=torch.int32).to(task.config.device)
+    broadcast_early_stop = torch.tensor(0, dtype=torch.int32).to(task.config.device)
     for epoch in range(task.config.epochs):
         task.current_epoch = epoch
         if dist.get_rank()==0:
@@ -434,21 +441,28 @@ def main(task):  ## rank is auto-allocated by DDP when calling mp.spawn
                     task.config.lr_sched_step_size,
                     task.current_epoch+1
                 )
-        if task.early_stopping.early_stop: 
-            ## Aggregate the early stop decision across all nodes
-            tensor_early_stop = torch.tensor(1, 
+        # if task.early_stopping.early_stop: 
+        if task.current_epoch==0: ## ❌ test early stopping
+            ## broadcast the early stop decision to all nodes
+            broadcast_early_stop = torch.tensor(1, 
                 dtype=torch.int32).to(task.config.device)
-            dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.SUM)
+            # dist.broadcast(braodcast_early_stop, src=0)  ## one to all, src is the process rank
+            dist.all_reduce(broadcast_early_stop, op=dist.ReduceOp.SUM)  ## ✅ yep, it works
             print(f"⚠️ Early stopping aggregating "
-                    f"{tensor_early_stop.item()} from Rank {dist.get_rank()}...")
-        if tensor_early_stop.item()!=0:
+                  f"{broadcast_early_stop.item()} from Rank {dist.get_rank()}...")       
+        if broadcast_early_stop.item()!=0:
             print(f"⚠️ Early stopping at epoch {task.current_epoch} "
                   f"on Rank {dist.get_rank()}")
+            dist.barrier()
             break
 
+    ## TODO: Test the model to see its accuracy
     if dist.get_rank()==0:
         print("🟢 Start testing...")
         eval(task, phase='test')
+
+    ## TODO: Save the trained model
+    if dist.get_rank()==0:  ## DDP only save one model
         print("🟢 Start saving the trained model...")
         save(task)
 

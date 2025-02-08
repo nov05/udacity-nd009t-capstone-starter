@@ -20,11 +20,8 @@ All these techniques can be seamlessly applied to **large-scale datasets**, incl
 
 - **Technical tips:**  
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
-
-- **Open issues:**
-  * Expected behavior: To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.broadcast()` to notify all nodes to stop. Then, use `dist.barrier()` to synchronize all processes before halting the training. Otherwise, errors like `AllGather` errors may be triggered, and processes could hang until timeout if nodes are not properly synchronized.  
-    GitHub Issues: [How to Implement Early Stopping with WebDataset in SageMaker Distributed Data Parallel (SMDDP) Framework? #446
-Open](https://github.com/webdataset/webdataset/issues/446)  
+  * To implement **early stopping** for distributed training, for example, when validation loss doesn't improve for 5 epochs, use **SMDDP**'s `dist.all_reduce(tensor_early_stop, op=dist.ReduceOp.SUM)` to notify all nodes to stop.
+     
 
 
 <br><br><br>  
@@ -52,6 +49,8 @@ Open](https://github.com/webdataset/webdataset/issues/446)
 
 ### 🏷️ **Notes**
 
+* GitHub Issues (closed): [How to Implement Early Stopping with WebDataset in SageMaker Distributed Data Parallel (SMDDP) Framework? #446
+Open](https://github.com/webdataset/webdataset/issues/446)  
 * [SageMaker input mode and WebDataset](https://docs.google.com/document/d/1SNQuYrCOy6s5Zg3NXdkrujOyDPP1VA4b8HKAqEoJvM4)   
 * [SageMaker PyTorch distributed training](https://docs.google.com/document/d/12yN589I95IdyJjOwoxH5uQf08bfCvnXvIYRYChFw8R8)       
 * [Different Levels of AWS Resources for Machine Learning Model Training and Deployment](https://gist.github.com/nov05/6f39c83c143d91175075fb8e7e871d0c)    
