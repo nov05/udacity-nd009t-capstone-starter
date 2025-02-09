@@ -81,7 +81,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 * Check [the PySpark EDA notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/docker_workspace/aft-vbi-pds.ipynb) on a subset of the metadata (10K out of 500K JSON files from the original dataset)
 
   * Demo video: [Query and consolidate a large number of small JSON files with AWS Athena <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/icons/youtube_red_2000x2000.png" width=20>](https://www.youtube.com/watch?v=DMazwtXpF8I)  
-    Check the [AWS Athena Trino SQL](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/AWS%20Athena%20Trino%20SQL.md) used here
+    Check the [AWS Athena Trino SQL](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/AWS%20Athena%20Trino%20SQL.md)
 
   * Demo video: [Develop local AWS Glue Spark jobs with Docker and VS Code <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/icons/youtube_red_2000x2000.png" width=20>](https://www.youtube.com/watch?v=Kqw_1q9O2NQ)  
     Check [the Text format tutorial](https://docs.google.com/document/d/1FtVdxZ283kILxVvl02-FmvLilk3uemvU_vIaJct2p5w)   
