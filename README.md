@@ -43,7 +43,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 ### 🏷️ **Environment and Services**
 
 * [Local conda env](https://gist.github.com/nov05/a6eccfd88ef180d5cae0d0d0e2fc646d?permalink_comment_id=5425643#gistcomment-5425643)  
-* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Athena / S3 / ECR / IAM / CloudWatch, Wandb, Docker
+* Windows 11 (OS), VS Cdoe (IDE), AWS SageMaker / Glue / Athena / S3 / ECR / IAM / CloudWatch, Wandb, Docker
 * Folder structure:
   ```
     /starter
