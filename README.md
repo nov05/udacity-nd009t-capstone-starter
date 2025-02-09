@@ -168,7 +168,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 * Use **SageMaker Distributed Data Parallel (SMDDP)** framework for distributed training  
 
-  * ✅✅✅ Check [the SageMaker notebook](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/starter/01_sagemaker_10k_adamw.ipynb) and [the training script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_train/train_v1.py)   
+  * ✅✅✅ Check [the SageMaker notebook](https://nbviewer.org/github/nov05/udacity-nd009t-capstone-starter/blob/master/starter/01_sagemaker_10k_adamw.ipynb) and [the training script](https://github.com/nov05/udacity-nd009t-capstone-starter/blob/master/scripts_train/train_v1.py)   
 
     * Beginning of the script
     ```python
