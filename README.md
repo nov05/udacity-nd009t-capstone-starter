@@ -1,4 +1,4 @@
-# 🟢 **Capstone Project: Teratype-Scale Machine Learning with AWS**    
+# 🟢 **Capstone Project: Terabyte-Scale Machine Learning with AWS**    
 **Udacity AWS Machine Learning Engineer Nanodegree (ND189)**   
 **P5 Amazon Bin Image Dataset** object counting, a demonstration of end-to-end machine learning engineering skills on AWS  
 
