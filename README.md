@@ -60,7 +60,8 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
       └── `convert_to_webdataset_10k.py`  # Major preprocessing script for SageMaker Processor
 
     /scripts_train
-      └── `train_v1.py`  # Major training script for SageMaker Torch estimator
+      ├── `train_v1.py`  # Major training script for SageMaker Torch estimator
+      └── `train_draft.py` ## Refer to the draft script for detailed comments
 
     /scripts_inference
       └── # deployment scripts
