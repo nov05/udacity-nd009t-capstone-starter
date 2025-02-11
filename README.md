@@ -8,11 +8,11 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 - For demonstration purposes, a subset of **10,441 samples** with **5 classes** was selected from the original dataset of over **500,000+ entries**.
   
-- **Exploratory Data Analysis (EDA)** was performed using **AWS Athena** CTAS and **Trino SQL** queries on the 10K metadata JSON files. The **10,441 JSON files** were efficiently consolidated into **21 SNAPPY-compressed Parquet files** in just **3.6 seconds**.
+- **Exploratory Data Analysis (EDA)** was performed using **AWS Athena** `CTAS` and **Trino SQL** queries on the 10K metadata JSON files. The **10,441 JSON files** were efficiently consolidated into **21 SNAPPY-compressed Parquet files** in just **3.6 seconds**.
   
-- **AWS Glue-Spark** job scripts were developed locally using **Docker** with AWS Glue Docker images hosted on `Docker Hub` or `Amazon ECR` Public Gallery and **VS Code** (IDE) for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
+- **AWS Glue-Spark** job scripts were developed locally using **Docker** with AWS Glue Docker images hosted on **Docker Hub** or **Amazon ECR** Public Gallery and **VS Code** (IDE) for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
   
-- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The **10K dataset** was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
+- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The `10K dataset` was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
 
 - **WebDataset** (a subclass of PyTorch IterableDataset) is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.  
 
@@ -53,14 +53,14 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
     /docker_workspace   # folder attached to the local Glue-Spark Docker container
       └── `aft-vbi-pds.ipynb`  # PySpark analysis of the metadata
 
-    /scripts_train
-      └── `train_v1.py`  # Major training script for SageMaker Torch estimator
+    /docker_process
+      └── `dockerfile`  # To create a custom image for SageMaker Processor
 
     /scripts_process
       └── `convert_to_webdataset_10k.py`  # Major preprocessing script for SageMaker Processor
 
-    /docker_process
-      └── `dockerfile`  # To create a custom image for SageMaker Processor
+    /scripts_train
+      └── `train_v1.py`  # Major training script for SageMaker Torch estimator
 
     /scripts_inference
       └── # deployment scripts
