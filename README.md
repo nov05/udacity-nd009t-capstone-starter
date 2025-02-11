@@ -4,7 +4,7 @@
 
 ### 🏷️ **Technical highlights:** 
 
-All the techniques listed below can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow—covering **ETL**, **EDA**, **data ingestion**, **training** (with tuning, debugging, and profiling), **inference**, **monitoring**, and etc.  
+All the techniques listed below can be seamlessly applied to **large-scale datasets**, including terabyte-scale training data, ensuring efficient processing and scalability without overwhelming infrastructure resources. Together, they form a comprehensive machine learning development workflow — covering **ETL**, **EDA**, **data ingestion**, **training** (with tuning, debugging, and profiling), **inference**, **monitoring**, and etc.  
 
 - For demonstration purposes, a subset of **10,441 samples** with **5 classes** was selected from the original dataset of over **500,000+ entries**.
   
@@ -12,7 +12,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
   
 - **AWS Glue-Spark** job scripts were developed locally using **Docker** with AWS Glue Docker images hosted on **Docker Hub** or **Amazon ECR** Public Gallery and **VS Code** (IDE) for further EDA tasks, such as generating visualizations of the class distribution and other data insights.
   
-- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The `10K dataset` was successfully converted into **WebDataset** .tar files for streamlined data loading during training.
+- To prepare the dataset for training, **AWS SageMaker's ScriptProcessor** was utilized in combination with a custom **Docker** image uploaded to **AWS ECR**. The `10K dataset` was successfully converted into **WebDataset** `.tar` files for streamlined data loading during training.
 
 - **WebDataset** (a subclass of PyTorch IterableDataset) is leveraged with the `'pipe'` command to stream data directly from **S3** to the **SageMaker** training instance(s). This approach enables efficient handling of **terabyte-scale datasets** without needing to copy the entire dataset to the training instance(s) at once. As a result, there’s no need for instances with large storage or external mounts like **EFS**, significantly reducing infrastructure costs. Additionally, this method offers a cost-effective alternative to using **Amazon FSx**, as it only incurs a fraction of the cost while still enabling large-scale data processing.  
 
@@ -22,7 +22,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
 - **AWS SageMaker Distributed Data Parallel (SMDDP)** framework is combined with **WebDataset** for distributed training. SMDDP efficiently manages tasks such as model replication across GPU nodes, asynchronous training, and synchronization of model weights across nodes. Meanwhile, **WebDataset** handles the shuffling, transforming, node-wise data splitting, and batching of training data, ensuring seamless data distribution for each node during training.  
 
-- SageMaker features like debugging, profiling, logging with **CloudWatch**, model deployment, inference, endpoint scaling, and monitoring were demonstrated in previous course projects and hands-on exercises, such as the [**P3 Dog Breed Image Classification**](https://github.com/nov05/udacity-CD0387-deep-learning-topics-within-computer-vision-nlp-project-starter?tab=readme-ov-file#-p3-submission-dog-breed-image-classification-using-aws-sagemaker) project.  
+- SageMaker features like debugging, profiling, logging with **CloudWatch**, model deployment, inference, endpoint scaling, production variants, and monitoring were demonstrated in previous course projects and hands-on exercises, such as the [**P3 Dog Breed Image Classification**](https://github.com/nov05/udacity-CD0387-deep-learning-topics-within-computer-vision-nlp-project-starter?tab=readme-ov-file#-p3-submission-dog-breed-image-classification-using-aws-sagemaker) project.  
 
 - **Technical tips:**  
   * The `WebDataset` class inherits from PyTorch's `IterableDataset`, which isn't compatible with the standard PyTorch `DataLoader`. Instead, use the `WebLoader` from WebDataset to create and iterate batches of streamed data.  
