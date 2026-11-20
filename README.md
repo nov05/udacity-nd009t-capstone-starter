@@ -123,7 +123,7 @@ All the techniques listed below can be seamlessly applied to **large-scale datas
 
   <img src="https://raw.githubusercontent.com/nov05/pictures/refs/heads/master/Udacity/20241119_aws-mle-nanodegree/2025-02-08%2011_12_08-p5-amazon-bin-images%20-%20S3%20bucket%20_%20S3%20_%20us-east-1.jpg" width=800>  
 
-* During training, we can stream the data from S3 to the training instances by passing the dataset paths as hyperparameters. In the training script, we use **WebDataset** `DataPipeline` and `WebLoader` to stream, buffle, shuffle, split by node (GPUs), transform, batch the data.
+* During training, we can stream the data from S3 to the training instances by passing the dataset paths as hyperparameters. In the training script, we use **WebDataset** `DataPipeline` and `WebLoader` to stream, buffer, shuffle, split by node (GPUs), transform, batch the data.
 
   ```python
   data_base_path = "s3://p5-amazon-bin-images/webdataset/"
